@@ -6,9 +6,25 @@ import RouteGuard from "./components/layout/RouteGuard";
 import "./globals.css";
 
 export const metadata = {
-  title: "Finanzas",
+  title: "Organizador Personal",
+
   description:
-    "Control de gastos personales y compartidos",
+    "Gestión de gastos, hábitos y organización personal",
+
+  manifest: "/manifest.json",
+
+  themeColor: "#7c5cfc",
+
+  icons: {
+    icon: "/icons/logo-organizador-192x192.png",
+    apple: "/icons/logo-organizador-512x512.png",
+  },
+
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Organizador",
+  },
 };
 
 export default function RootLayout({
