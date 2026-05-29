@@ -5,19 +5,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
-  signInWithPopup,
   signInWithEmailAndPassword,
 } from "firebase/auth";
 
-import {
-  auth,
-  googleProvider,
-} from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 
 import Appshell from "../components/layout/Appshell";
+
 import IconDashboard from "../components/icons/IconDashboard";
-
-
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,25 +28,6 @@ export default function LoginPage() {
 
   const [loading, setLoading] =
     useState(false);
-
-  async function handleGoogle() {
-    setLoading(true);
-
-    try {
-      await signInWithPopup(
-        auth,
-        googleProvider,
-      );
-
-      router.push("/home");
-    } catch (e) {
-      setError(
-        "Error al iniciar con Google",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleEmailAuth(e) {
     e.preventDefault();
@@ -101,34 +77,6 @@ export default function LoginPage() {
           {/* Card */}
 
           <div className="flex flex-col gap-4 rounded-[24px] px-6 py-7 backdrop-blur-[24px] bg-glass border border-border2">
-            {/* Google */}
-
-            <button
-              onClick={handleGoogle}
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-[10px] rounded-[14px] px-4 py-[13px] text-[14px] font-medium transition-colors cursor-pointer bg-white/5 border border-white/10 text-text hover:bg-white/10"
-            >
-              <img
-                src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
-                className="w-[18px] h-[18px]"
-                alt="Google"
-              />
-
-              Continuar con Google
-            </button>
-
-            {/* Divider */}
-
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-border" />
-
-              <span className="text-[12px] text-text-muted">
-                o
-              </span>
-
-              <div className="flex-1 h-px bg-border" />
-            </div>
-
             {/* Form */}
 
             <form

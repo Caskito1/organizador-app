@@ -2,10 +2,10 @@
   "name": "Organizador Personal",
   "short_name": "Organizador",
   "description": "Gestión de gastos, hábitos y organización personal",
-  "start_url": "/home",
+  "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#16a34a",
+  "background_color": "#0f0f13",
+  "theme_color": "#7c5cfc",
   "orientation": "portrait",
   "icons": [
     {
