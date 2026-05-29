@@ -13,7 +13,6 @@ export const metadata = {
 
   manifest: "/manifest.json",
 
-  themeColor: "#7c5cfc",
 
   icons: {
     icon: "/icons/logo-organizador-192x192.png",
@@ -25,6 +24,10 @@ export const metadata = {
     statusBarStyle: "default",
     title: "Organizador",
   },
+  
+};
+export const viewport = {
+  themeColor: "#7c5cfc",
 };
 
 export default function RootLayout({
