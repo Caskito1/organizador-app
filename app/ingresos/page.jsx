@@ -96,7 +96,7 @@ export default function IngresosPage() {
             }
           />
 
-          <TransferenciasIngresosSection
+          {/* <TransferenciasIngresosSection
             transferencias={
               transferenciasRecibidas
             }
@@ -108,7 +108,7 @@ export default function IngresosPage() {
                 "transferencias",
               )
             }
-          />
+          /> */}
         </div>
 
         <MonthSelectorModal

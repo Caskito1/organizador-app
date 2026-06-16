@@ -5,12 +5,10 @@ export default function PersonalSection({
   gastos,
   open,
   onToggle,
+  onEdit,
+  onDelete,
 }) {
-  const total = gastos.reduce(
-    (a, g) =>
-      a + Number(g.monto || 0),
-    0,
-  );
+  const total = gastos.reduce((a, g) => a + Number(g.monto || 0), 0);
 
   return (
     <Acordeon
@@ -24,9 +22,9 @@ export default function PersonalSection({
         <FilaGasto
           key={g.id}
           gasto={g}
-          usuarioNombre={
-            g.usuarioNombre
-          }
+          usuarioNombre={g.usuarioNombre}
+          onEdit={onEdit}
+          onDelete={onDelete}
         />
       ))}
     </Acordeon>

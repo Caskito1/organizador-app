@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { useAuth } from "@/lib/AuthContext";
 import { useGroups } from "@/lib/GroupContext";
+import { db } from "@/lib/firebase";
 import { getMonthRange } from "../helpers/dateHelpers";
 import subscribeGastos from "../services/subscribeGastos";
 import subscribeFixedExpenses from "../services/subscribeFixedExpenses";
@@ -15,13 +17,13 @@ export default function useGastos(mesActual) {
   const [gastos, setGastos] = useState([]);
   const [transferencias, setTransferencias] = useState([]);
   const [fixedEntries, setFixedEntries] = useState([]);
-  const [openSection, setOpenSection] = useState(null); // solo uno abierto a la vez
+  const [openSection, setOpenSection] = useState(null);
+  const [editingGasto, setEditingGasto] = useState(null);
 
   useEffect(() => {
     if (!user || loadingGroups) return;
     const unsubscribe = subscribeGastos({
-      user,
-      groups,
+      user, groups,
       onChange: ({ gastos, transferencias }) => {
         setGastos(gastos);
         setTransferencias(transferencias);
@@ -31,20 +33,13 @@ export default function useGastos(mesActual) {
     return unsubscribe;
   }, [user, groups, loadingGroups]);
 
-  // Suscribirse a fixed_expense_entries del mes
   useEffect(() => {
     if (!user || loadingGroups) return;
     const grupo = groups[0] ?? null;
     const y = mesActual.getFullYear();
     const m = String(mesActual.getMonth() + 1).padStart(2, "0");
     const periodo = `${y}-${m}`;
-
-    const unsubscribe = subscribeFixedExpenses({
-      user,
-      grupo,
-      periodo,
-      onChange: setFixedEntries,
-    });
+    const unsubscribe = subscribeFixedExpenses({ user, grupo, periodo, onChange: setFixedEntries });
     return unsubscribe;
   }, [user, groups, loadingGroups, mesActual]);
 
@@ -95,18 +90,29 @@ export default function useGastos(mesActual) {
     return { grupo, gastos: gastosGrupo, totalGrupo, totalUsuario };
   });
 
-  // Gastos fijos del mes — compartidos y personales
   const fixedCompartidos = fixedEntries.filter((e) => e.groupId);
   const fixedPersonales = fixedEntries.filter((e) => !e.groupId);
   const totalFixed = fixedEntries.reduce((a, e) => a + Number(e.montoTotal || 0), 0);
 
   const totalPersonales = gastosPersonales.reduce((a, g) => a + Number(g.monto || 0), 0);
   const totalGruposUsuario = gastosPorGrupo.reduce((a, g) => a + g.totalUsuario, 0);
-  const totalGastos = totalPersonales + totalGruposUsuario;
+
+  // Total = personales + transferencias enviadas + mi parte de grupos + fijos
+  const totalGastos = totalPersonales + totalGruposUsuario + totalFixed;
 
   const totalTransacciones =
     gastosPersonales.length +
     gastosPorGrupo.reduce((a, { gastos }) => a + gastos.length, 0);
+
+  // ─── ACCIONES ───────────────────────────────────────────
+
+  async function editarGasto(id, payload) {
+    await updateDoc(doc(db, "gastos", id), payload);
+  }
+
+  async function eliminarGasto(id) {
+    await deleteDoc(doc(db, "gastos", id));
+  }
 
   return {
     loading,
@@ -122,5 +128,9 @@ export default function useGastos(mesActual) {
     totalTransacciones,
     openSection,
     toggleSection,
+    editingGasto,
+    setEditingGasto,
+    editarGasto,
+    eliminarGasto,
   };
 }

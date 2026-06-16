@@ -10,6 +10,7 @@ import TotalMesCard from "./sections/TotalMesCard";
 import PersonalSection from "./sections/PersonalSection";
 import GroupSection from "./sections/GroupSection";
 import GastosFijosSection from "./sections/GastosFijosSection";
+import EditarGastoModal from "./components/EditarGastoModal";
 
 import LoadingScreen from "@/app/components/ui/LoadingScreen";
 import MonthSelectorModal from "./components/MonthNavigator";
@@ -33,6 +34,10 @@ export default function GastosPage() {
     totalTransacciones,
     openSection,
     toggleSection,
+    editingGasto,
+    setEditingGasto,
+    editarGasto,
+    eliminarGasto,
   } = useGastos(selectedMonth);
 
   if (loading || loadingGroups) {
@@ -54,15 +59,14 @@ export default function GastosPage() {
         />
 
         <div className="flex flex-col gap-[10px] mt-4 pb-10">
-
-          {/* GASTOS PERSONALES */}
           <PersonalSection
             gastos={gastosPersonales}
             open={openSection === "personal"}
             onToggle={() => toggleSection("personal")}
+            onEdit={setEditingGasto}
+            onDelete={(g) => eliminarGasto(g.id)}
           />
 
-          {/* GASTOS COMPARTIDOS — uno por grupo */}
           {gastosPorGrupo.map(({ grupo, gastos, totalGrupo, totalUsuario }) => (
             <GroupSection
               key={grupo.id}
@@ -72,10 +76,11 @@ export default function GastosPage() {
               totalUsuario={totalUsuario}
               open={openSection === grupo.id}
               onToggle={() => toggleSection(grupo.id)}
+              onEdit={setEditingGasto}
+              onDelete={(g) => eliminarGasto(g.id)}
             />
           ))}
 
-          {/* GASTOS FIJOS */}
           <GastosFijosSection
             fixedCompartidos={fixedCompartidos}
             fixedPersonales={fixedPersonales}
@@ -91,6 +96,15 @@ export default function GastosPage() {
           onClose={() => setCalendarOpen(false)}
           onSelect={(date) => setSelectedMonth(date)}
         />
+
+        {editingGasto && (
+          <EditarGastoModal
+            gasto={editingGasto}
+            onClose={() => setEditingGasto(null)}
+            onSave={(payload) => editarGasto(editingGasto.id, payload)}
+            onDelete={eliminarGasto}
+          />
+        )}
       </div>
     </Appshell>
   );

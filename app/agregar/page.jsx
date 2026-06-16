@@ -79,7 +79,7 @@ export default function Agregar() {
             </button>
 
             {/* Gastos fijos */}
-            <button
+            {/* <button
               onClick={() => setModo("gastos-fijos")}
               className="w-full rounded-[18px] border border-[rgba(138,100,255,0.3)] bg-glass px-5 py-5 text-left backdrop-blur-[16px] transition-all duration-200 hover:border-accent2"
             >
@@ -90,10 +90,10 @@ export default function Agregar() {
               <p className="text-[13px] leading-[1.5] text-text-muted">
                 Servicios, alquiler y suscripciones.
               </p>
-            </button>
+            </button> */}
 
             {/* Transferencia */}
-            <button
+            {/* <button
               onClick={() => setModo("transferencia")}
               className="w-full rounded-[18px] border border-[rgba(138,100,255,0.3)] bg-glass px-5 py-5 text-left backdrop-blur-[16px] transition-all duration-200 hover:border-accent2"
             >
@@ -104,7 +104,7 @@ export default function Agregar() {
               <p className="text-[13px] leading-[1.5] text-text-muted">
                 Registrá un pago entre integrantes del grupo.
               </p>
-            </button>
+            </button> */}
           </SectionBlock>
 
           {/* Separador */}
