@@ -8,6 +8,8 @@ import ModoCompra from "./components/ModoCompra";
 import ModoTransferencia from "./components/ModoTransferencia";
 import ModoIngreso from "./components/ModoIngreso";
 
+import ModoGastosFijos from "./components/ModoGastosFijos";
+
 import BackBtn from "../components/ui/BackBtn";
 
 import Appshell from "../components/layout/Appshell";
@@ -76,6 +78,20 @@ export default function Agregar() {
               </p>
             </button>
 
+            {/* Gastos fijos */}
+            <button
+              onClick={() => setModo("gastos-fijos")}
+              className="w-full rounded-[18px] border border-[rgba(138,100,255,0.3)] bg-glass px-5 py-5 text-left backdrop-blur-[16px] transition-all duration-200 hover:border-accent2"
+            >
+              <p className="mb-1 font-sora text-[15px] font-bold text-text">
+                Gasto fijo
+              </p>
+
+              <p className="text-[13px] leading-[1.5] text-text-muted">
+                Servicios, alquiler y suscripciones.
+              </p>
+            </button>
+
             {/* Transferencia */}
             <button
               onClick={() => setModo("transferencia")}
@@ -106,7 +122,6 @@ export default function Agregar() {
               </p>
             </div>
 
-            {/* Nuevo ingreso */}
             <button
               onClick={() => setModo("ingreso")}
               className="w-full rounded-[18px] border border-[rgba(94,224,197,0.25)] bg-[rgba(94,224,197,0.06)] px-5 py-5 text-left backdrop-blur-[16px] transition-all duration-200 hover:border-[rgba(94,224,197,0.45)]"
@@ -129,6 +144,10 @@ export default function Agregar() {
 
       {modo === "compra" && (
         <ModoCompra onBack={() => setModo(null)} />
+      )}
+
+      {modo === "gastos-fijos" && (
+        <ModoGastosFijos onBack={() => setModo(null)} />
       )}
 
       {modo === "transferencia" && (

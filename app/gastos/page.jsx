@@ -9,6 +9,7 @@ import GastosHeader from "./sections/GastosHeader";
 import TotalMesCard from "./sections/TotalMesCard";
 import PersonalSection from "./sections/PersonalSection";
 import GroupSection from "./sections/GroupSection";
+import GastosFijosSection from "./sections/GastosFijosSection";
 
 import LoadingScreen from "@/app/components/ui/LoadingScreen";
 import MonthSelectorModal from "./components/MonthNavigator";
@@ -16,31 +17,26 @@ import Appshell from "@/app/components/layout/Appshell";
 
 export default function GastosPage() {
   const router = useRouter();
-
-  const [selectedMonth, setSelectedMonth] =
-    useState(new Date());
-
-  const [calendarOpen, setCalendarOpen] =
-    useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(new Date());
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const {
     loading,
     loadingGroups,
-
+    user,
     gastosPersonales,
     gastosPorGrupo,
-
+    fixedCompartidos,
+    fixedPersonales,
+    totalFixed,
     totalGastos,
     totalTransacciones,
-
-    openSections,
+    openSection,
     toggleSection,
   } = useGastos(selectedMonth);
 
   if (loading || loadingGroups) {
-    return (
-      <LoadingScreen text="Cargando gastos..." />
-    );
+    return <LoadingScreen text="Cargando gastos..." />;
   }
 
   return (
@@ -49,72 +45,51 @@ export default function GastosPage() {
         <GastosHeader
           router={router}
           mesActual={selectedMonth}
-          onOpenCalendar={() =>
-            setCalendarOpen(true)
-          }
+          onOpenCalendar={() => setCalendarOpen(true)}
         />
 
         <TotalMesCard
           totalGastos={totalGastos}
-          totalTransacciones={
-            totalTransacciones
-          }
+          totalTransacciones={totalTransacciones}
         />
 
-        <div className="flex flex-col gap-[10px] mt-4">
-          {/* PERSONALES */}
+        <div className="flex flex-col gap-[10px] mt-4 pb-10">
+
+          {/* GASTOS PERSONALES */}
           <PersonalSection
             gastos={gastosPersonales}
-            total={gastosPersonales.reduce(
-              (acc, g) =>
-                acc +
-                Number(g.monto || 0),
-              0,
-            )}
-            open={openSections.personal}
-            onToggle={() =>
-              toggleSection("personal")
-            }
+            open={openSection === "personal"}
+            onToggle={() => toggleSection("personal")}
           />
 
-          {/* GRUPOS */}
-          {gastosPorGrupo.map(
-            ({
-    grupo,
-    gastos,
-    totalGrupo,
-    totalUsuario,
-  }) => (
-              <GroupSection
-                key={grupo.id}
-                grupo={grupo}
-                gastos={gastos}
-                totalGrupo={totalGrupo}
-                totalUsuario={totalUsuario}
-                open={
-                  openSections[
-                    grupo.id
-                  ] ?? false
-                }
-                onToggle={() =>
-                  toggleSection(
-                    grupo.id,
-                  )
-                }
-              />
-            ),
-          )}
+          {/* GASTOS COMPARTIDOS — uno por grupo */}
+          {gastosPorGrupo.map(({ grupo, gastos, totalGrupo, totalUsuario }) => (
+            <GroupSection
+              key={grupo.id}
+              grupo={grupo}
+              gastos={gastos}
+              totalGrupo={totalGrupo}
+              totalUsuario={totalUsuario}
+              open={openSection === grupo.id}
+              onToggle={() => toggleSection(grupo.id)}
+            />
+          ))}
+
+          {/* GASTOS FIJOS */}
+          <GastosFijosSection
+            fixedCompartidos={fixedCompartidos}
+            fixedPersonales={fixedPersonales}
+            totalFixed={totalFixed}
+            open={openSection === "fijos"}
+            onToggle={() => toggleSection("fijos")}
+          />
         </div>
 
         <MonthSelectorModal
           open={calendarOpen}
           value={selectedMonth}
-          onClose={() =>
-            setCalendarOpen(false)
-          }
-          onSelect={(date) =>
-            setSelectedMonth(date)
-          }
+          onClose={() => setCalendarOpen(false)}
+          onSelect={(date) => setSelectedMonth(date)}
         />
       </div>
     </Appshell>

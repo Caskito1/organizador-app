@@ -25,6 +25,16 @@ const quickActions = [
     colorBorder: "rgba(138,100,255,0.22)",
     disabled: false,
   },
+  {
+  icon: IconCalendar,
+  label: "Gastos fijos",
+  sub: "Servicios y vencimientos",
+  path: "/gastos-fijos",
+  color: "var(--accent)",
+  colorBg: "rgba(138,100,255,0.1)",
+  colorBorder: "rgba(138,100,255,0.22)",
+  disabled: false,
+},
 
   {
     icon: IconShopping,
