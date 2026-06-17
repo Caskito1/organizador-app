@@ -114,9 +114,9 @@ export default function useFixedExpenses(mesActual) {
     const entry = getEntry(expenseId, categoria);
     const montoDefault = categoria === "personal" ? getUserMontoDefault(expenseId) : null;
 
-    if (!entry) {
-      return montoDefault ? "pendiente_pago" : "sin_registrar";
-    }
+ if (!entry) {
+  return "sin_registrar";
+}
     if (entry.pagoHasta && periodoMayorA(entry.pagoHasta, periodo)) return "pagado_hasta";
     if (!entry.paidByUid) return "pendiente_pago";
     if (categoria === "personal") return "saldado";

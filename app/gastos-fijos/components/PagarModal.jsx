@@ -92,7 +92,10 @@ const [monto, setMonto] = useState(
                   </div>
                   {tieneDefault && (
                     <button
-                      onClick={() => { setMonto(def.montoDefault); setEditandoMonto(false); }}
+                     onClick={() => {
+                        setMonto(gasto.montoDefault);
+                        setEditandoMonto(false);
+                      }}
                       className="mt-2 text-[11px] text-text-muted"
                     >
                       ↩ Volver al monto por defecto
