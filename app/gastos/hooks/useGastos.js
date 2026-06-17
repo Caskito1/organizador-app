@@ -90,9 +90,28 @@ export default function useGastos(mesActual) {
     return { grupo, gastos: gastosGrupo, totalGrupo, totalUsuario };
   });
 
-  const fixedCompartidos = fixedEntries.filter((e) => e.groupId);
-  const fixedPersonales = fixedEntries.filter((e) => !e.groupId);
-  const totalFixed = fixedEntries.reduce((a, e) => a + Number(e.montoTotal || 0), 0);
+  const fixedCompartidos = fixedEntries
+  .filter((e) => e.groupId)
+  .map((e) => ({
+    ...e,
+    montoPersonal: Number(e.montoTotal || 0) / 2,
+  }));
+
+const fixedPersonales = fixedEntries
+  .filter((e) => !e.groupId)
+  .map((e) => ({
+    ...e,
+    montoPersonal: Number(e.montoTotal || 0),
+  }));
+  const totalFixedReal = fixedEntries.reduce(
+  (a, e) => a + Number(e.montoTotal || 0),
+  0,
+);
+ const totalFixed = fixedEntries.reduce((a, e) => {
+  const monto = Number(e.montoTotal || 0);
+
+  return a + (e.groupId ? monto / 2 : monto);
+}, 0);
 
   const totalPersonales = gastosPersonales.reduce((a, g) => a + Number(g.monto || 0), 0);
   const totalGruposUsuario = gastosPorGrupo.reduce((a, g) => a + g.totalUsuario, 0);
@@ -124,6 +143,7 @@ export default function useGastos(mesActual) {
     fixedCompartidos,
     fixedPersonales,
     totalFixed,
+    totalFixedReal,
     totalGastos,
     totalTransacciones,
     openSection,

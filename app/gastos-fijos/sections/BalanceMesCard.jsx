@@ -1,6 +1,7 @@
 export default function BalanceMesCard({
   balanceNeto,
   totalCompartido,
+  miTotalCompartido,
   totalPersonal,
   grupo,
   itemsQueDebo = [],
@@ -19,12 +20,17 @@ export default function BalanceMesCard({
       {/* Totales del mes */}
       <div className="flex gap-3">
         <div className="flex-1">
-          <p className="text-[11px] text-[rgba(200,174,255,0.65)] uppercase tracking-[0.5px] mb-[4px]">
-            Compartido
-          </p>
-          <p className="font-sora text-[22px] font-bold text-accent-light leading-none">
-            ${Number(totalCompartido).toLocaleString("es-AR")}
-          </p>
+            <p className="text-[11px] text-[rgba(200,174,255,0.65)] uppercase tracking-[0.5px] mb-[4px]">
+              Compartidos
+            </p>
+
+            <p className="font-sora text-[22px] font-bold text-accent-light leading-none">
+              ${Number(miTotalCompartido).toLocaleString("es-AR")}
+            </p>
+
+            <p className="text-[11px] text-text-muted mt-1">
+              Total: ${Number(totalCompartido).toLocaleString("es-AR")}
+            </p>
         </div>
 
         <div className="w-[1px] bg-[rgba(138,100,255,0.2)]" />

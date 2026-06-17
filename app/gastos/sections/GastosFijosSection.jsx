@@ -30,6 +30,7 @@ function FilaFijo({ entry }) {
 export default function GastosFijosSection({
   fixedCompartidos,
   fixedPersonales,
+  totalFixedReal,
   totalFixed,
   open,
   onToggle,
@@ -40,6 +41,7 @@ export default function GastosFijosSection({
     <Acordeon
       titulo="Gastos Fijos"
       total={totalFixed}
+      subtitle={`Total real: $${Number(totalFixedReal).toLocaleString("es-AR")}`}
       open={open}
       onToggle={onToggle}
       empty={total === 0}

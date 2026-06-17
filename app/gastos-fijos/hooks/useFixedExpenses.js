@@ -172,6 +172,7 @@ export default function useFixedExpenses(mesActual) {
   });
 
   const totalCompartido = gastosCompartidos.reduce((acc, g) => acc + (g.entry?.montoTotal ?? 0), 0);
+  const miTotalCompartido = totalCompartido / 2;
   const totalPersonal = gastosPersonales.reduce((acc, g) => acc + (g.entry?.montoTotal ?? 0), 0);
 
   // ─── ACCIONES ───────────────────────────────────────────
@@ -314,5 +315,6 @@ export default function useFixedExpenses(mesActual) {
     registrarPago,
     saldarPendiente,
     saldarMes,
+    miTotalCompartido,
   };
 }

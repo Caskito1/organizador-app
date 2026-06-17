@@ -29,6 +29,7 @@ export default function GastosPage() {
     gastosPorGrupo,
     fixedCompartidos,
     fixedPersonales,
+    totalFixedReal,
     totalFixed,
     totalGastos,
     totalTransacciones,
@@ -84,6 +85,7 @@ export default function GastosPage() {
           <GastosFijosSection
             fixedCompartidos={fixedCompartidos}
             fixedPersonales={fixedPersonales}
+            totalFixedReal={totalFixedReal}
             totalFixed={totalFixed}
             open={openSection === "fijos"}
             onToggle={() => toggleSection("fijos")}

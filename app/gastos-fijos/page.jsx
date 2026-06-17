@@ -30,6 +30,7 @@ export default function GastosFijosPage() {
     itemsQueDebo,
     itemsQueDebenAMi,
     totalCompartido,
+    miTotalCompartido,
     totalPersonal,
     openItems,
     toggleItem,
@@ -57,6 +58,7 @@ export default function GastosFijosPage() {
         <BalanceMesCard
           balanceNeto={balanceNeto}
           totalCompartido={totalCompartido}
+          miTotalCompartido={miTotalCompartido}
           totalPersonal={totalPersonal}
           grupo={grupo}
           itemsQueDebo={itemsQueDebo}
