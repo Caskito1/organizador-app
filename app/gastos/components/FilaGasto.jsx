@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useAuth } from "@/lib/AuthContext";
 
 export default function FilaGasto({
   gasto,
@@ -11,6 +12,8 @@ export default function FilaGasto({
   const [menuOpen, setMenuOpen] = useState(false);
   const longPressTimer = useRef(null);
 
+
+  const { user } = useAuth();
   const fecha =
     gasto.createdAt?.toDate?.() ??
     new Date(gasto.createdAt);
@@ -22,14 +25,19 @@ export default function FilaGasto({
 
   // Long press handlers
   function handlePressStart() {
-    longPressTimer.current = setTimeout(() => setMenuOpen(true), 500);
-  }
+  if (!puedeEditar) return;
+
+  longPressTimer.current = setTimeout(() => setMenuOpen(true), 500);
+}
 
   function handlePressEnd() {
     clearTimeout(longPressTimer.current);
   }
 
   const esTransferencia = gasto.tipo === "transferencia";
+const puedeEditar =
+  gasto.tipo === "personal" ||
+  gasto.usuario === user?.uid;
 
   return (
     <div className="relative">
@@ -52,7 +60,7 @@ export default function FilaGasto({
 
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Botón ⋯ — visible en hover desktop, oculto en mobile */}
-          {!esTransferencia && (
+         {!esTransferencia && puedeEditar && (
             <button
               onClick={(e) => { e.stopPropagation(); setMenuOpen(true); }}
               className="opacity-0 group-hover:opacity-100 transition-opacity w-[24px] h-[24px] flex items-center justify-center rounded-[6px] text-text-muted hover:text-text hover:bg-white/8"
@@ -71,7 +79,7 @@ export default function FilaGasto({
       </div>
 
       {/* Menú contextual */}
-      {menuOpen && !esTransferencia && (
+      {menuOpen && !esTransferencia && puedeEditar && (
         <>
           {/* Overlay para cerrar */}
           <div
