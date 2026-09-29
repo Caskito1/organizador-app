@@ -3,6 +3,7 @@ export default function BalanceMesCard({
   totalCompartido,
   miTotalCompartido,
   totalPersonal,
+  totalPersonalCubierto,
   grupo,
   itemsQueDebo = [],
   itemsQueDebenAMi = [],
@@ -40,7 +41,11 @@ export default function BalanceMesCard({
             Personal
           </p>
           <p className="font-sora text-[22px] font-bold text-accent-light leading-none">
-            ${Number(totalPersonal).toLocaleString("es-AR")}
+            ${Number(totalPersonalCubierto).toLocaleString("es-AR")}
+          </p>
+
+          <p className="text-[11px] text-text-muted mt-1">
+            Total registrado: ${Number(totalPersonal).toLocaleString("es-AR")}
           </p>
         </div>
       </div>

@@ -32,6 +32,7 @@ export default function GastosFijosPage() {
     totalCompartido,
     miTotalCompartido,
     totalPersonal,
+    totalPersonalCubierto,
     openItems,
     toggleItem,
     agregarGastoPersonal,
@@ -60,6 +61,7 @@ export default function GastosFijosPage() {
           totalCompartido={totalCompartido}
           miTotalCompartido={miTotalCompartido}
           totalPersonal={totalPersonal}
+          totalPersonalCubierto={totalPersonalCubierto}
           grupo={grupo}
           itemsQueDebo={itemsQueDebo}
           itemsQueDebenAMi={itemsQueDebenAMi}

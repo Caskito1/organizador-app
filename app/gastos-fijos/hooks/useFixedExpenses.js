@@ -22,6 +22,12 @@ function getPeriodo(date) {
 
 function periodoMayorA(a, b) { return a > b; }
 
+// Misma regla de 2.2 que app/gastos/hooks/useGastos.js y GastosFijosSection.jsx.
+// Duplicada a propósito: no se extrae a un helper compartido.
+const esPagado = (e) =>
+  !!e.paidByUid ||
+  (!!e.pagoHasta && e.pagoHasta > e.periodo);
+
 export default function useFixedExpenses(mesActual) {
   const { user } = useAuth();
   const { groups, loadingGroups } = useGroups();
@@ -174,6 +180,10 @@ export default function useFixedExpenses(mesActual) {
   const totalCompartido = gastosCompartidos.reduce((acc, g) => acc + (g.entry?.montoTotal ?? 0), 0);
   const miTotalCompartido = totalCompartido / 2;
   const totalPersonal = gastosPersonales.reduce((acc, g) => acc + (g.entry?.montoTotal ?? 0), 0);
+  const totalPersonalCubierto = gastosPersonales.reduce(
+    (acc, g) => acc + (g.entry && esPagado(g.entry) ? Number(g.entry.montoTotal || 0) : 0),
+    0,
+  );
 
   // ─── ACCIONES ───────────────────────────────────────────
 
@@ -306,6 +316,7 @@ export default function useFixedExpenses(mesActual) {
     itemsQueDebenAMi,
     totalCompartido,
     totalPersonal,
+    totalPersonalCubierto,
     openItems,
     toggleItem,
     agregarGastoPersonal,
