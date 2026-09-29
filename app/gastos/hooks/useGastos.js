@@ -103,11 +103,21 @@ const fixedPersonales = fixedEntries
     ...e,
     montoPersonal: Number(e.montoTotal || 0),
   }));
-  const totalFixedReal = fixedEntries.reduce(
+  // Total del mes / Total real: solo entra lo EFECTIVAMENTE PAGADO.
+  // Criterio = esPagado. NO usar `estado`: "saldado" es balance, no pago, y
+  // "pagado_hasta" se calcula antes de verificar el pago (useFixedExpenses.js:120-121).
+  // El anual vigente cuenta aunque paidByUid sea null (registrarGasto lo resetea).
+  const esPagado = (e) =>
+    !!e.paidByUid ||
+    (!!e.pagoHasta && e.pagoHasta > e.periodo);
+
+  const fixedPagadas = fixedEntries.filter(esPagado);
+
+  const totalFixedReal = fixedPagadas.reduce(
   (a, e) => a + Number(e.montoTotal || 0),
   0,
 );
- const totalFixed = fixedEntries.reduce((a, e) => {
+ const totalFixed = fixedPagadas.reduce((a, e) => {
   const monto = Number(e.montoTotal || 0);
 
   return a + (e.groupId ? monto / 2 : monto);

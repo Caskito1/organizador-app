@@ -1,14 +1,29 @@
 import Acordeon from "../components/Acordeon";
 
 const ESTADO_CONFIG = {
-  pendiente_pago:    { label: "Pendiente", className: "text-amber-300" },
+  pendiente_pago:    { label: "Registrado · Pendiente de pago", className: "text-amber-300" },
   pendiente_saldar:  { label: "Sin saldar", className: "text-red-300" },
   saldado:           { label: "Saldado ✓", className: "text-emerald-300" },
   pagado_hasta:      { label: "Al día ✓",  className: "text-emerald-300" },
 };
 
+// Criterio = esPagado. NO usar `estado`: "saldado" es balance, no pago, y
+// "pagado_hasta" se calcula antes de verificar el pago (useFixedExpenses.js:120-121).
+// El anual vigente cuenta aunque paidByUid sea null (registrarGasto lo resetea).
+const esPagado = (entry) =>
+  !!entry.paidByUid ||
+  (!!entry.pagoHasta && entry.pagoHasta > entry.periodo);
+
+// Invariante: esPagado(entry) === true  =>  nunca se muestra "Pendiente".
+function estadoVisible(entry) {
+  if (!esPagado(entry)) return "pendiente_pago";
+  return entry.pagoHasta && entry.pagoHasta > entry.periodo
+    ? "pagado_hasta"
+    : entry.estado;
+}
+
 function FilaFijo({ entry }) {
-  const config = ESTADO_CONFIG[entry.estado] ?? ESTADO_CONFIG.pendiente_pago;
+  const config = ESTADO_CONFIG[estadoVisible(entry)] ?? ESTADO_CONFIG.pendiente_pago;
 
   return (
     <div className="flex items-center justify-between border-b border-[rgba(138,100,255,0.1)] py-[10px]">
