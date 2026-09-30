@@ -29,6 +29,7 @@ export default function useIngresos(
       sueldo: true,
       bandas: true,
       freelance: true,
+      otros: true,
       transferencias: true,
     });
 
@@ -82,6 +83,13 @@ export default function useIngresos(
       );
     }, [ingresos]);
 
+  const ingresosOtros =
+    useMemo(() => {
+      return ingresos.filter(
+        (i) => i.tipo === "otros",
+      );
+    }, [ingresos]);
+
   const totalIngresos =
     useMemo(() => {
       const totalIngresosDocs =
@@ -122,6 +130,7 @@ export default function useIngresos(
     ingresosSueldo,
     ingresosBandas,
     ingresosFreelance,
+    ingresosOtros,
 
     transferenciasRecibidas,
 

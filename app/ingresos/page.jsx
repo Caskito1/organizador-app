@@ -11,6 +11,7 @@ import TotalIngresosCard from "./sections/TotalIngresosCard";
 import SueldoSection from "./sections/SueldoSection";
 import BandasSection from "./sections/BandasSection";
 import FreelanceSection from "./sections/FreelanceSection";
+import OtrosSection from "./sections/OtrosSection";
 import TransferenciasIngresosSection from "./sections/TransferenciasIngresosSection";
 
 import LoadingScreen from "@/app/components/ui/LoadingScreen";
@@ -33,6 +34,7 @@ export default function IngresosPage() {
     ingresosSueldo,
     ingresosBandas,
     ingresosFreelance,
+    ingresosOtros,
 
     transferenciasRecibidas,
 
@@ -66,6 +68,7 @@ export default function IngresosPage() {
             ingresosSueldo.length +
             ingresosBandas.length +
             ingresosFreelance.length +
+            ingresosOtros.length +
             transferenciasRecibidas.length
           }
         />
@@ -93,6 +96,14 @@ export default function IngresosPage() {
             open={openSections.freelance}
             onToggle={() =>
               toggleSection("freelance")
+            }
+          />
+
+          <OtrosSection
+            ingresos={ingresosOtros}
+            open={openSections.otros}
+            onToggle={() =>
+              toggleSection("otros")
             }
           />
 

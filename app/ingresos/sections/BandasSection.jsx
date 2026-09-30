@@ -1,5 +1,22 @@
 import Acordeon from "@/app/gastos/components/Acordeon";
 
+// Fuente unica de los labels. Los ids son los canonicos que escribe
+// useModoIngreso y no se cambian. Duplicado por decision de alcance
+// de 2.3: no se extrae a una taxonomia compartida.
+import { BANDAS } from "@/app/agregar/components/ingresos/hooks/useModoIngreso";
+
+const BANDA_LABEL = BANDAS.reduce(
+  (acc, b) => {
+    acc[b.id] = b.label;
+
+    return acc;
+  },
+  {},
+);
+
+const labelBanda = (id) =>
+  BANDA_LABEL[id] ?? id;
+
 export default function BandasSection({
   ingresos,
   open,
@@ -58,7 +75,7 @@ export default function BandasSection({
 
                 <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(138,100,255,0.08)]">
                   <p className="font-sora text-[14px] font-semibold capitalize text-text">
-                    {banda}
+                    {labelBanda(banda)}
                   </p>
 
                   <p className="font-sora text-[14px] font-bold text-accent-light">
