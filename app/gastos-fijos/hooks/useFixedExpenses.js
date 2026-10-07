@@ -179,9 +179,17 @@ export default function useFixedExpenses(mesActual) {
 
   const totalCompartido = gastosCompartidos.reduce((acc, g) => acc + (g.entry?.montoTotal ?? 0), 0);
   const miTotalCompartido = totalCompartido / 2;
-  const totalPersonal = gastosPersonales.reduce((acc, g) => acc + (g.entry?.montoTotal ?? 0), 0);
+  // Solo cuentan entries REALES del período visible (2.9).
+  // El efecto 4 (:86-103) sigue trayendo los anuales con pagoHasta vigente para
+  // mostrarlos en las cards ("Pago hasta ..."), pero NO entran a los totales.
+  const esDelPeriodo = (g) => !!g.entry && g.entry.periodo === periodo;
+
+  const totalPersonal = gastosPersonales.reduce(
+    (acc, g) => acc + (esDelPeriodo(g) ? Number(g.entry.montoTotal || 0) : 0),
+    0,
+  );
   const totalPersonalCubierto = gastosPersonales.reduce(
-    (acc, g) => acc + (g.entry && esPagado(g.entry) ? Number(g.entry.montoTotal || 0) : 0),
+    (acc, g) => acc + (esDelPeriodo(g) && esPagado(g.entry) ? Number(g.entry.montoTotal || 0) : 0),
     0,
   );
 
