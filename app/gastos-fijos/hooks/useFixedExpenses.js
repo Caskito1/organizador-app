@@ -225,6 +225,11 @@ export default function useFixedExpenses(mesActual) {
     const esCompartido = !!GASTOS_FIJOS_COMPARTIDOS_MAP[expenseId];
     const montoFinal = montoTotal ?? getUserMontoDefault(expenseId);
     if (!montoFinal) return;
+    if (esCompartido && !grupo?.id) {
+      throw new Error(
+        "No pudimos guardar: tu grupo todavía no está disponible. Reintentá en unos segundos.",
+      );
+    }
 
     const existingEntry = esCompartido
       ? sharedEntries.find((e) => e.fixedExpenseId === expenseId)
@@ -249,6 +254,7 @@ export default function useFixedExpenses(mesActual) {
     if (existingEntry) {
       await updateDoc(doc(db, "fixed_expense_entries", existingEntry.id), {
         montoTotal: montoFinal,
+        groupId: esCompartido ? grupo?.id ?? null : null,
         vencimiento: vencimiento ?? null,
         pagoHasta: pagoHasta ?? null,
         estado: "pendiente_pago",

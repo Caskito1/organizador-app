@@ -14,6 +14,7 @@ const [monto, setMonto] = useState(
   const [pagoHasta, setPagoHasta] = useState(gasto.entry?.pagoHasta ?? "");
   const [editandoMonto, setEditandoMonto] = useState(!tieneDefault);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const isEdit = estado === "sin_registrar" || estado === "pagado_hasta";
   const isPayment = estado === "pendiente_pago";
@@ -21,8 +22,11 @@ const [monto, setMonto] = useState(
   async function handleSave() {
     if (!monto) return;
     setLoading(true);
+    setError(null);
     try {
       await onSave({ monto: Number(monto), vencimiento, pagoHasta: pagoHasta || null });
+    } catch (e) {
+      setError(e?.message || "No se pudo guardar. Reintentá.");
     } finally {
       setLoading(false);
     }
@@ -162,6 +166,12 @@ const [monto, setMonto] = useState(
                 className="rounded-[14px] border border-border bg-white/3 px-4 py-3 text-[14px] text-text"
               />
             </div>
+          )}
+
+          {error && (
+            <p className="text-[12px] text-red-300 bg-red-500/10 border border-red-500/20 rounded-[12px] px-3 py-2 text-center">
+              {error}
+            </p>
           )}
 
           {/* SUBMIT */}
