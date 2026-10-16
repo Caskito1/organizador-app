@@ -633,3 +633,91 @@ test('3.22 — lecturas de entregas: get por no-participante rechazado; list des
   await assertFails(getDocs(coll));
   await assertFails(getDocs(collection(dbAs(C), 'reintegro_devoluciones')));
 });
+
+test('3.23 — list de reintegros: array-contains ajeno vacio acepta; sin filtro o con filtro ajeno rechazado', async () => {
+  await seed('r323', baseObl());
+  const coll = collection(dbAs(C), 'reintegros');
+  // uid ajeno con array-contains propio: query vacia (nadie lo incluye) → acepta
+  const qOwn = query(coll, where('participantes', 'array-contains', C));
+  const snapOwn = await assertSucceeds(getDocs(qOwn));
+  if (!snapOwn.empty) throw new Error('R1: query de uid ajeno debia venir vacia');
+  // uid ajeno con array-contains de otro: filtro no prueba la regla → rechaza
+  await assertFails(
+    getDocs(query(coll, where('participantes', 'array-contains', A)))
+  );
+  // sin filtro: Firestore no puede probar uid() in participantes → rechaza
+  await assertFails(getDocs(collection(dbAs(C), 'reintegros')));
+  await assertFails(getDocs(collection(dbAs(A), 'reintegros')));
+});
+
+test('3.24 — H-b: lista blanca de (d) — congelados, tipos, campo desconocido, no-registrador, condonada; positivos', async () => {
+  // base pendiente de confirmación para que (d) esté disponible
+  await seed('r324a', createMemberObl({ devuelto: 0 }));
+  const dbA = dbAs(A);
+  // sentido inmutable
+  await assertFails(
+    updateDoc(doc(dbA, 'reintegros', 'r324a'), { sentido: 'por_devolver' })
+  );
+  // movimientoInicial inmutable
+  await assertFails(
+    updateDoc(doc(dbA, 'reintegros', 'r324a'), { movimientoInicial: 'salida' })
+  );
+  // concepto vacío
+  await assertFails(
+    updateDoc(doc(dbA, 'reintegros', 'r324a'), { concepto: '' })
+  );
+  // campo fuera de la lista blanca (caso futuro)
+  await assertFails(
+    updateDoc(doc(dbA, 'reintegros', 'r324a'), { foo: 'bar' })
+  );
+  // contraparteNombre no-string
+  await assertFails(
+    updateDoc(doc(dbA, 'reintegros', 'r324a'), { contraparteNombre: 42 })
+  );
+  // registradoPorNombre no-string
+  await assertFails(
+    updateDoc(doc(dbA, 'reintegros', 'r324a'), { registradoPorNombre: null })
+  );
+  // ejecutado por la contraparte (no registrador)
+  await assertFails(
+    updateDoc(doc(dbAs(B), 'reintegros', 'r324a'), { concepto: 'edit B' })
+  );
+  // sobre condonada: rechazado
+  await seed(
+    'r324b',
+    createMemberObl({
+      condonacion: { condonadaPor: A, condonadaAt: serverTimestamp() },
+    })
+  );
+  await assertFails(
+    updateDoc(doc(dbA, 'reintegros', 'r324b'), { concepto: 'edit condonada' })
+  );
+  // positivos: los tres campos editables aceptan strings válidos
+  await assertSucceeds(
+    updateDoc(doc(dbA, 'reintegros', 'r324a'), { concepto: 'Alquiler noviembre' })
+  );
+  await assertSucceeds(
+    updateDoc(doc(dbA, 'reintegros', 'r324a'), { contraparteNombre: 'Roberto' })
+  );
+  await assertSucceeds(
+    updateDoc(doc(dbA, 'reintegros', 'r324a'), { registradoPorNombre: 'Alicia' })
+  );
+});
+
+test('3.25 — H-c: monto congelado tras confirmación; externo y pendiente lo editan', async () => {
+  // miembro CONFIRMADO: monto congelado
+  await seed('r325a', baseObl({ devuelto: 0 }));
+  await assertFails(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r325a'), { monto: 1200 })
+  );
+  // miembro PENDIENTE (campo en null): monto editable
+  await seed('r325b', createMemberObl({ devuelto: 0 }));
+  await assertSucceeds(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r325b'), { monto: 1200 })
+  );
+  // EXTERNA (campo ausente del doc): monto editable
+  await seed('r325c', externalObl({ devuelto: 0 }));
+  await assertSucceeds(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r325c'), { monto: 700 })
+  );
+});

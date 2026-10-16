@@ -288,7 +288,10 @@ match /fixed_expense_entries/{entryId} {
              )
           // (c) Editar monto de la obligación (solo registrador, D-8(ii):
           // monto bloqueado con devuelto > 0; transaccional en la app).
-          // Solo toca `monto`; solo sobre ACTIVA.
+          // H-c (2026-10-16): congelado también tras la confirmación
+          // bilateral — el monto es parte del acuerdo confirmado. Se usa
+          // .get() con default para no romper obligaciones EXTERNAS donde
+          // el campo no existe en el documento.
           || ( esRegistrador(rid)
                && request.resource.data.diff(resource.data).affectedKeys()
                    .hasOnly(['monto'])
@@ -297,25 +300,27 @@ match /fixed_expense_entries/{entryId} {
                && request.resource.data.monto >= request.resource.data.devuelto
                && resource.data.devuelto == 0
                && request.resource.data.devuelto == 0
+               && resource.data.get('confirmadaPor', null) == null
                && resource.data.get('condonacion', null) == null
              )
-          // (d) Edición de campos NO financieros (D-8(ii): siempre; solo
-          // registrador). Única rama 'libre': montos, acumulador,
-          // constancias, confirmación y gastoVinculadoId quedan intactos;
-          // solo sobre ACTIVA (condonada ⇒ solo lectura; eliminada ya cae
-          // en la guard global).
+          // (d) Edición de campos NO financieros — LISTA BLANCA (H-b,
+          // 2026-10-16): en vez de congelar campo por campo, solo se
+          // permiten EXACTAMENTE estos tres y todo lo demás queda
+          // congelado por defecto (incluye sentido, movimientoInicial,
+          // monto, devuelto, constancias, confirmación y cualquier campo
+          // nuevo que se agregue al esquema). Cada uno exige tipo string
+          // como el alta. Congelado también tras la confirmación
+          // (concepto es parte del acuerdo bilateral) y solo sobre ACTIVA
+          // (condonada ⇒ solo lectura; eliminada cae en la guard global).
           || ( esRegistrador(rid)
-               && request.resource.data.monto == resource.data.monto
-               && request.resource.data.devuelto == resource.data.devuelto
-               && request.resource.data.get('condonacion', null)
-                  == resource.data.get('condonacion', null)
-               && request.resource.data.get('eliminacion', null)
-                  == resource.data.get('eliminacion', null)
-               && request.resource.data.get('confirmadaPor', null)
-                  == resource.data.get('confirmadaPor', null)
-               && request.resource.data.get('confirmadaAt', null)
-                  == resource.data.get('confirmadaAt', null)
-               && request.resource.data.gastoVinculadoId == null
+               && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['concepto', 'contraparteNombre',
+                             'registradoPorNombre'])
+               && request.resource.data.concepto is string
+               && request.resource.data.concepto.size() > 0
+               && request.resource.data.contraparteNombre is string
+               && request.resource.data.registradoPorNombre is string
+               && resource.data.get('confirmadaPor', null) == null
                && resource.data.get('condonacion', null) == null
              )
           // (e) Condonación (C1, D-8): UNA SOLA VEZ (sin condonación previa)

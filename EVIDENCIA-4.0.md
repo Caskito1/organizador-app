@@ -27,12 +27,13 @@
 
 ## 3. Suite de reglas (`npm run test:rules`)
 
-- **Resultado final: 22/22 PASS** (3.1–3.22), run archivado (`EVIDENCIA-4.0-test-rules-final-2026-10-16.log`).
+- **Resultado final: 25/25 PASS** (3.1–3.25), run archivado (`EVIDENCIA-4.0-hbc-rules-suite.log`).
 - Corridas intermedias (registro de iteración, no de fallo encubierto):
   - Run 1: 19/22 — 3 bugs del **test** (no de las reglas): instancias Firestore mezcladas en batches (3.8/3.15); 3.9 no contemplaba la guarda 4.6 (entregas pre-confirmación bloqueadas).
   - Run 2: 22/22 PASS (sin query `list`).
   - Run 3: 21/22 — **H-d** (ver §4): el `list` con `array-contains` era denegado (`Null value error @ L214`).
-  - Run 4: **22/22 PASS** con H-d corregido y query `list` real cubierta en 3.9.
+  - Run 4: 22/22 PASS con H-d corregido y query `list` real cubierta en 3.9.
+  - Run 5: **25/25 PASS** con H-b/H-c resueltos y tests 3.23–3.25 añadidos (ver §5).
 
 ## 4. Hallazgos del gate (corregidos en 4.0)
 
@@ -40,22 +41,21 @@
 |---|---|---|
 | **H-d** | La regla de lectura de `reintegros` (`allow get, list: if esParticipante(rid)`) usaba `get()` interno; el motor la rechazaba entera en queries `list` (`Null value error`), rompiendo el patrón R1' (`array-contains` sobre `participantes`) que la app usará desde 4.1 | Lectura reescrita: `allow get/list: if auth() && uid() in resource.data.participantes` (evaluable doc-por-doc por el filtro `array-contains`). Cubierto por 3.9 (query real con `array-contains`, ambas partes, no vacía). |
 
-## 5. Hallazgos pendientes — BLOQUEANTES del despliegue de reglas a Producción
+## 5. Hallazgos H-a/H-b/H-c — resueltos o aceptados (16/10/2026)
 
-> **Los tres hallazgos siguientes NO bloquean el commit de 4.0 a `staging`** (el código
-> del módulo aún no existe; nadie escribe `reintegros*` en producción). **SÍ bloquean
-> `firebase deploy --only firestore:rules`** hasta que se resuelvan o el usuario decida
-> aceptarlos explícitamente. Detectados en el repaso del 16/10/2026.
+> Los tres hallazgos detectados en el repaso del 16/10/2026 fueron resueltos en
+> reglas o aceptados explícitamente por el usuario. Ninguno queda como deuda
+> abierta; el deploy a Producción sigue requiriendo aprobación aparte (§7).
 
-| ID | Hallazgo | Detalle (reglas §2.2 de la PROPUESTA) | Impacto si se despliega sin resolver |
+| ID | Hallazgo | Resolución | Tests |
 |---|---|---|---|
-| **H-a** | **`devuelto` editable sin entrega acompañante** | Rama (a) del update de `reintegros`: permite subir `devuelto` con `hasOnly(['devuelto'])` sin exigir la creación de una entrega en la misma transacción. El acople 3.8 solo va en un sentido (entrega → update); el inverso (update → entrega) no está impuesto por reglas. | Un cliente malicioso/roto puede inflar `devuelto` sin entregas. Mitigación parcial: reconciliación D-7 (post-hoc). Solución posible: acople inverso con `getAfter` sobre una entrega candidate, o restringir la rama (a) a transacciones del módulo. |
-| **H-b** | **`sentido` editable en la rama (d)** | Rama (d) congela monto, devuelto, constancias, confirmación y `gastoVinculadoId`, pero **no `sentido`** — el registrador puede voltear `por_cobrar` ↔ `por_devolver` post-alta. | Altera la semántica de acreedor/deudor (C1 depende de `sentido`); podría usarse para condonar indebidamente. Solución: añadir `request.resource.data.sentido == resource.data.sentido` a la rama (d). |
-| **H-c** | **`monto` editable tras confirmar** | Rama (c) solo exige `devuelto == 0`; no chequea `confirmadaPor`. Tras la confirmación bilateral, el registrador puede cambiar el monto unilateralmente. | Rompe el acuerdo bilateral de 4.6 (la contraparte confirmó un monto que puede cambiar). Solución: añadir `resource.data.get('confirmadaPor', null) == null` a la rama (c), o exigir re-confirmación. |
+| **H-a** | `devuelto` editable sin entrega acompañante (acople solo en un sentido) | **ACEPTADO por el usuario como limitación documentada en v1** (16/10/2026). Racional: usuarios de confianza, único escritor legítimo son los helpers del módulo (D-6), reconciliación D-7 detecta divergencias post-hoc. El acople inverso (`ultimaEntregaId` + `existsAfter`) queda como evolución futura si aparece un cliente roto. | 3.8 cubre el acople entrega→update (sentido que las reglas garantizan). |
+| **H-b** | `sentido` editable en la rama (d); `movimientoInicial` también editable; `concepto` podía vaciarse | **RESUELTO** — rama (d) reescrita como **lista blanca** (`hasOnly(['concepto','contraparteNombre','registradoPorNombre'])`). Todo lo demás congelado por defecto: `sentido`, `movimientoInicial`, monto, devuelto, constancias, confirmación, `gastoVinculadoId` y cualquier campo futuro. Cada campo exige `is string` (como el alta) y `concepto.size() > 0`. `movimientoInicial` congelado explícitamente (registro de qué movimiento se generó al alta). `concepto` congelado post-confirmación (parte del acuerdo bilateral) — decisión explícita del 16/10/2026. | 3.24: sentido→rechazado; movimientoInicial→rechazado; concepto vacío→rechazado; campo `foo` (fuera de lista)→rechazado; `contraparteNombre` no-string→rechazado; `registradoPorNombre` no-string→rechazado; editado por contraparte→rechazado; sobre condonada→rechazado; positivos de los 3 campos editables. |
+| **H-c** | `monto` editable tras confirmar | **RESUELTO** — rama (c) exige `resource.data.get('confirmadaPor', null) == null`. Se usa `.get()` con default para no romper obligaciones **externas** donde el campo no existe en el documento. Decisión: congelar el monto post-confirmación (no resetear la confirmación). | 3.25: miembro confirmado→rechazado; miembro pendiente (campo en null)→aceptado; externa (campo ausente)→aceptado. |
 
-**Estado:** pendientes de decisión/resolución del usuario **antes del despliegue a
-Producción**. Pueden resolverse como corrección de reglas en esta misma 4.0 (nueva
-corrida de suite) o escalarse a 4.6 si el usuario lo decide.
+**Equivalencia Bloque A vs backup de consola (re-verificada antes del push):** diff vacío
+(solo difieren los dos `}` de cierre de `service`/`match` que viven al final del archivo,
+después del Bloque B). SHA-256 del backup sin cambios: `9769979C…C57792`.
 
 ## 6. Verificaciones de app (criterios de done de 4.0)
 
@@ -68,6 +68,6 @@ corrida de suite) o escalarse a 4.6 si el usuario lo decide.
 
 ## 7. Pasos posteriores NO autorizados por esta evidencia
 
-1. **Commit de 4.0 en `staging` + push a `origin/staging`** — autorizado por el usuario (16/10/2026), pendiente de ejecución al momento de escribir este archivo.
+1. ~~**Commit de 4.0 en `staging` + push a `origin/staging`**~~ — ejecutado: `ff47291` (gate inicial) y commit posterior con H-b/H-c resueltos + suite 25/25.
 2. **`git push origin staging:main`** — requiere aprobación explícita posterior.
-3. **`firebase deploy --only firestore:rules --project finanzas-app-1c5f6`** — requiere: (a) resolución o aceptación explícita de **H-a/H-b/H-c**; (b) aprobación aparte del usuario; (c) ventana de mantenimiento (Staging y Producción comparten proyecto). Backup de restauración registrado en §2.
+3. **`firebase deploy --only firestore:rules --project finanzas-app-1c5f6`** — requiere: (a) aprobación aparte del usuario; (b) ventana de mantenimiento (Staging y Producción comparten proyecto); (c) antes del deploy: diff del Bloque A contra la consola vigente de ese día + suite completa sobre el archivo exacto que se sube. Backup de restauración registrado en §2. H-a aceptado (§5); H-b/H-c resueltos en reglas (§5).
