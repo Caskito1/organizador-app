@@ -1,0 +1,467 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ═══════════════════════════════════════════════════════════════════
+    // BLOQUE A — Reglas vigentes en consola (COPIA EXACTA, SIN EDICIONES)
+    // Obtenidas de Firebase Console → Firestore → Rules el 16/10/2026.
+    // SHA-256 del texto de consola: 9769979CD0EDEC03948C80D3CB2EC00191334E070CD431F2C69B092865C57792
+    // Backup de restauración: temp/opencode/rules-consola-backup-2026-10-16.txt
+    // NOTA: `productos` NO tiene regla en consola (default-deny). Documentado
+    // en la evidencia de 4.0; fuera del alcance de estas reglas.
+    // Cubre: groups, gastos, ingresos, transferencias, fixed_expenses,
+    // fixed_expense_entries, users.
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ─────────────────────────────
+    // HELPERS
+    // ─────────────────────────────
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(groupId) {
+      return signedIn()
+        && groupId != null
+        && exists(/databases/$(database)/documents/groups/$(groupId))
+        && request.auth.uid in
+          get(/databases/$(database)/documents/groups/$(groupId))
+            .data.members;
+    }
+
+    // ─────────────────────────────
+    // GROUPS
+    // ─────────────────────────────
+
+    match /groups/{groupId} {
+
+      allow read: if signedIn()
+        && request.auth.uid in resource.data.members;
+
+      allow create: if signedIn()
+        && request.resource.data.members is list
+        && request.auth.uid in request.resource.data.members;
+
+      allow update, delete: if signedIn()
+        && request.auth.uid in resource.data.members;
+    }
+
+    // ─────────────────────────────
+    // GASTOS
+    // ─────────────────────────────
+
+    match /gastos/{gastoId} {
+
+      allow read: if signedIn()
+        && (
+          (
+            resource.data.tipo == "personal"
+            && resource.data.usuario == request.auth.uid
+          )
+          ||
+          (
+            resource.data.tipo == "compartido"
+            && isMember(resource.data.groupId)
+          )
+        );
+
+      allow create: if signedIn()
+        && request.resource.data.usuario == request.auth.uid
+        && (
+          request.resource.data.tipo == "personal"
+          ||
+          (
+            request.resource.data.tipo == "compartido"
+            && isMember(request.resource.data.groupId)
+          )
+        );
+
+      allow update, delete: if signedIn()
+        && resource.data.usuario == request.auth.uid;
+    }
+
+    // ─────────────────────────────
+    // INGRESOS
+    // ─────────────────────────────
+
+    match /ingresos/{ingresoId} {
+
+      allow read, update, delete: if signedIn()
+        && resource.data.usuario == request.auth.uid;
+
+      allow create: if signedIn()
+        && request.resource.data.usuario == request.auth.uid;
+    }
+
+    // ─────────────────────────────
+    // TRANSFERENCIAS
+    // ─────────────────────────────
+
+    match /transferencias/{transId} {
+
+      allow create: if signedIn()
+        && request.auth.uid == request.resource.data.deUid
+        && isMember(request.resource.data.groupId);
+
+      allow read: if signedIn()
+        && (
+          request.auth.uid == resource.data.deUid
+          || request.auth.uid == resource.data.paraUid
+          || isMember(resource.data.groupId)
+        );
+
+      allow update, delete: if signedIn()
+        && resource.data.deUid == request.auth.uid;
+    }
+
+    // ─────────────────────────────
+    // FIXED EXPENSES
+    // ─────────────────────────────
+
+match /fixed_expenses/{expenseId} {
+  // Leer: solo el dueño
+  allow read: if signedIn()
+    && resource.data.usuario == request.auth.uid;
+ 
+  // Crear: solo para sí mismo
+  allow create: if signedIn()
+    && request.resource.data.usuario == request.auth.uid;
+ 
+  // Editar/borrar: solo el dueño
+  allow update, delete: if signedIn()
+    && resource.data.usuario == request.auth.uid;
+}
+
+match /fixed_expense_entries/{entryId} {
+  allow read: if signedIn()
+    && (
+      resource.data.usuario == request.auth.uid
+      || isMember(resource.data.groupId)
+    );
+  allow create: if signedIn()
+    && request.resource.data.usuario == request.auth.uid;
+  allow update: if signedIn()
+    && (
+      resource.data.usuario == request.auth.uid
+      || isMember(resource.data.groupId)
+    );
+  allow delete: if signedIn()
+    && resource.data.usuario == request.auth.uid;
+}
+    // ─────────────────────────────
+    // USERS
+    // ─────────────────────────────
+
+    match /users/{userId} {
+
+      allow read: if signedIn();
+
+      allow write: if signedIn()
+        && request.auth.uid == userId;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // BLOQUE B — Colecciones nuevas del módulo Reintegros (PROPUESTO)
+    // Satisface: D-2 (no-inflación: fuera del alcance de estas reglas está
+    // gastos/ingresos, que no se tocan), D-3 (eventos create-only), D-6
+    // (acople transacción↔reglas), D-8 (matriz E1/C1/(ii)), D-9/D-10
+    // (constancias, congelaciones), 4.6 (confirmación, §2.5).
+    // Fuente: PROPUESTA-ETAPA-4.md §2.2 (texto completo aprobado).
+    // ═══════════════════════════════════════════════════════════════════
+
+    function auth()   { return request.auth != null; }
+    function uid()    { return request.auth.uid; }
+
+    function obl(rid) {
+      return get(/databases/$(database)/documents/reintegros/$(rid)).data;
+    }
+    function oblAfter(rid) {
+      return getAfter(/databases/$(database)/documents/reintegros/$(rid)).data;
+    }
+    function dev(did) {
+      return get(/databases/$(database)/documents/reintegro_devoluciones/$(did)).data;
+    }
+
+    function esParticipante(rid) {
+      return auth() && uid() in obl(rid).participantes;
+    }
+
+    // C1 (D-8): solo el ACREEDOR según su vista condona.
+    // EXTERNO (contraparteUid == null): solo el registrador — D-8 lo dice
+    // explícitamente y la lógica de espejo no aplica (no hay segunda parte
+    // en la app). Miembro: espejo según sentido (el que adelantó / la otra
+    // parte cuando el registrador es el deudor).
+    function esAcreedor(rid) {
+      return obl(rid).contraparteUid == null
+        ? obl(rid).registradoPor == uid()                  // externo: solo registrador
+        : (obl(rid).registradoPor == uid()
+             ? obl(rid).sentido == 'por_cobrar'            // miembro: el que adelantó
+             : (uid() in obl(rid).participantes
+                && obl(rid).sentido == 'por_devolver'));   // contraparte acreedora
+    }
+
+    // E1 (D-8): solo el REGISTRADOR elimina la obligación.
+    function esRegistrador(rid) {
+      return auth() && obl(rid).registradoPor == uid();
+    }
+
+    // ─── reintegros ────────────────────────────────────────────────────
+    match /reintegros/{rid} {
+
+      // Lectura: las dos partes (R1' del cliente; aquí la garantía server-side).
+      // `get` usa resource.data directo (evaluable por el motor de reglas);
+      // `list` también — Firestore prueba el filtro array-contains del query
+      // contra uid() in resource.data.participantes doc por doc. La versión
+      // anterior usaba esParticipante(rid) (un get() interno) y el motor la
+      // rechazaba entera en list con 'Null value error' (hallazgo H-d, 4.0).
+      allow get: if auth() && uid() in resource.data.participantes;
+      allow list: if auth() && uid() in resource.data.participantes;
+
+      // Alta (4.2): firmada por el propio registrador; sin entregas ni
+      // constancias aún. Coherencia participantes ↔ contraparte exigida
+      // (externo: 1 uid — §1.2; miembro: 2 uids distintos).
+      allow create: if auth()
+        && request.resource.data.registradoPor == uid()
+        && request.resource.data.registradoPorNombre is string
+        && uid() in request.resource.data.participantes
+        // GRUPO EXPLÍCITO (hallazgo 1): la precedencia &&/|| no debe partir
+        // la condición — un contraparteUid string no puede esquivar nada.
+        && (request.resource.data.contraparteUid == null
+            ? request.resource.data.participantes.size() == 1
+            : (request.resource.data.contraparteUid is string
+               && request.resource.data.participantes.size() == 2
+               && request.resource.data.contraparteUid
+                  in request.resource.data.participantes
+               && request.resource.data.contraparteUid != uid()))
+        && request.resource.data.contraparteNombre is string
+        && request.resource.data.sentido in ['por_cobrar', 'por_devolver']
+        && request.resource.data.monto is number
+        && request.resource.data.monto > 0
+        && request.resource.data.devuelto == 0
+        && request.resource.data.movimientoInicial in ['ninguno', 'salida', 'entrada']
+        && request.resource.data.concepto is string
+        && request.resource.data.concepto.size() > 0
+        && request.resource.data.gastoVinculadoId == null   // reservado en v1
+        // Sin constancias al nacer (nadie 'ya condonó/ya eliminó' un doc nuevo):
+        && !('condonacion' in request.resource.data)
+        && !('eliminacion' in request.resource.data)
+        // 4.6 (§2.5): null = pendiente de confirmación si hay contraparte con uid
+        && ('confirmadaPor' in request.resource.data
+            ? (request.resource.data.contraparteUid != null
+               && request.resource.data.confirmadaPor == null)
+            : request.resource.data.contraparteUid == null);
+
+      allow delete: if false;   // Criterio 3.7: sin borrado físico, NUNCA.
+
+      allow update: if auth() && esParticipante(rid)
+        // 3.5 — campos de identidad inmutables:
+        && request.resource.data.registradoPor == resource.data.registradoPor
+        && request.resource.data.contraparteUid == resource.data.contraparteUid
+        && request.resource.data.participantes == resource.data.participantes
+        && request.resource.data.createdAt == resource.data.createdAt
+        // I-11 / 3.13 — un registro eliminado es inmutable (guard GLOBAL):
+        && !('eliminacion' in resource.data)
+        && (
+          // (a) Devolución (transacción de submitDevolucion): sube devuelto
+          // dentro de [0, monto] y NO toca ningún otro campo (diff/hasOnly).
+          // El acople EXACTO lo impone la regla de creación de la entrega
+          // (criterio 3.8): sin el update acompañante, esa creación falla.
+          // Solo sobre ACTIVA: condonada ⇒ congelada (D-9: solo lectura).
+          ( request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['devuelto'])
+            && request.resource.data.devuelto > resource.data.devuelto
+            && request.resource.data.devuelto <= request.resource.data.monto
+            && resource.data.get('condonacion', null) == null
+          )
+          // (b) Eliminar entrega (lado de la obligación): baja devuelto
+          // exactamente el monto de la entrega; el acople exacto lo impone
+          // la regla de update de la entrega (criterio 3.8': getAfter(obl)
+          // == get(obl) − get(entrega).monto). Solo sobre ACTIVA
+          // (D-9: entregas congeladas en una condonada).
+          || ( request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['devuelto'])
+               && request.resource.data.devuelto < resource.data.devuelto
+               && request.resource.data.devuelto >= 0
+               && resource.data.get('condonacion', null) == null
+             )
+          // (c) Editar monto de la obligación (solo registrador, D-8(ii):
+          // monto bloqueado con devuelto > 0; transaccional en la app).
+          // Solo toca `monto`; solo sobre ACTIVA.
+          || ( esRegistrador(rid)
+               && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['monto'])
+               && request.resource.data.monto != resource.data.monto
+               && request.resource.data.monto > 0
+               && request.resource.data.monto >= request.resource.data.devuelto
+               && resource.data.devuelto == 0
+               && request.resource.data.devuelto == 0
+               && resource.data.get('condonacion', null) == null
+             )
+          // (d) Edición de campos NO financieros (D-8(ii): siempre; solo
+          // registrador). Única rama 'libre': montos, acumulador,
+          // constancias, confirmación y gastoVinculadoId quedan intactos;
+          // solo sobre ACTIVA (condonada ⇒ solo lectura; eliminada ya cae
+          // en la guard global).
+          || ( esRegistrador(rid)
+               && request.resource.data.monto == resource.data.monto
+               && request.resource.data.devuelto == resource.data.devuelto
+               && request.resource.data.get('condonacion', null)
+                  == resource.data.get('condonacion', null)
+               && request.resource.data.get('eliminacion', null)
+                  == resource.data.get('eliminacion', null)
+               && request.resource.data.get('confirmadaPor', null)
+                  == resource.data.get('confirmadaPor', null)
+               && request.resource.data.get('confirmadaAt', null)
+                  == resource.data.get('confirmadaAt', null)
+               && request.resource.data.gastoVinculadoId == null
+               && resource.data.get('condonacion', null) == null
+             )
+          // (e) Condonación (C1, D-8): UNA SOLA VEZ (sin condonación previa)
+          // y solo el acreedor (esAcreedor — incluye el caso externo). Única
+          // transición autorizada que AGREGA `condonacion`: hasOnly impide
+          // mover devuelto (I-12), monto o cualquier otro campo. Corrige el
+          // hueco donde una edición ordinaria podía forjar la constancia.
+          || ( resource.data.get('condonacion', null) == null
+               && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['condonacion'])
+               && request.resource.data.get('condonacion', null) != null
+               && esAcreedor(rid)
+               && request.resource.data.condonacion.condonadaPor == uid()
+             )
+          // (f) Eliminar obligación (E1): UNA SOLA VEZ; solo registrador.
+          // Única transición autorizada que AGREGA `eliminacion`. Es la ÚNICA
+          // rama permitida sobre una obligación CONDONADA — así D-9 opción B
+          // (elegida 16/10/2026) sigue posible: conserva ambas constancias
+          // (I-4/I-10), monto, devuelto y confirmación intactos; sin
+          // reactivación silenciosa (no existe rama que quite constancias).
+          || ( esRegistrador(rid)
+               && resource.data.get('eliminacion', null) == null
+               && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['eliminacion'])
+               && request.resource.data.get('eliminacion', null) != null
+               && request.resource.data.eliminacion.eliminadaPor == uid()
+             )
+          // (g) 4.6 — Confirmación (§2.5): UNA SOLA VEZ (null → uid), solo
+          // la contraparte (≠ registrador), con contraparte miembro, y SOLO
+          // cambian los dos campos de confirmación (demás congelados).
+          // `confirmadaAt` debe escribirse con serverTimestamp(): se exige
+          // igual a request.time (no se admite hora forjada por el cliente).
+          || ( resource.data.contraparteUid != null
+               && uid() != resource.data.registradoPor
+               && resource.data.get('confirmadaPor', null) == null
+               && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['confirmadaPor', 'confirmadaAt'])
+               && request.resource.data.confirmadaPor == uid()
+               && request.resource.data.confirmadaAt == request.time
+             )
+        );
+
+      // ─── subcolección: eventos (bitácora, D-3) ──────────────────────
+      match /eventos/{eid} {
+        allow get, list: if esParticipante(rid);
+        allow create: if auth()
+          // Solo participantes de ESTA obligación pueden escribir su bitácora:
+          && esParticipante(rid)
+          && request.resource.data.registradoPor == uid()
+          && request.resource.data.tipo in
+               ['creacion', 'edicion', 'eliminacion', 'condonacion']
+               // 'confirmacion' NO va aquí: D-3 aprobó estos 4 tipos. La
+               // extensión se propone y se aprueba con 4.6 (§2.5) y entra
+               // con la edición de reglas de esa subetapa — sin ampliar en
+               // silencio el esquema en 4.0.
+          && request.resource.data.entidad in ['obligacion', 'entrega'];
+        allow update, delete: if false;   // 3.14: create-only
+      }
+    }
+
+    // ─── reintegro_devoluciones ────────────────────────────────────────
+    match /reintegro_devoluciones/{did} {
+
+      // Lectura SOLO por get individual (hallazgo 6 corregido): la app
+      // resuelve ids visibles vía la query D1 sobre `reintegros` y hace
+      // get por cada id (volumen v1 bajo, ≤30 por R-3). `list` queda
+      // deshabilitado: Firestore NO puede evaluar un filtro where(reintegroId)
+      // dentro de reglas, así que un list habilitado expondría entregas
+      // ajenas a cualquier autenticado. (La versión anterior usaba
+      // request.resource.data —inexistente en lecturas— y habilitaba
+      // `list` contradictoriamente con su propia nota; ambas cosas
+      // eliminadas.)
+      allow get: if auth() && esParticipante(resource.data.reintegroId);
+      allow list: if false;
+
+      // Alta de entrega (4.3, criterio 3.8 — ACOPLE D-6):
+      allow create: if auth()
+        && request.resource.data.reintegroId is string
+        && esParticipante(request.resource.data.reintegroId)
+        && request.resource.data.monto is number
+        && request.resource.data.monto > 0
+        && request.resource.data.registradoPor == uid()
+        && request.resource.data.fechaPago != null
+        && !('eliminacion' in request.resource.data)
+        // OBLIGACIÓN ACTIVA (D-9, decisión 16/10/2026): ninguna entrega
+        // ordinaria sobre condonada (entregas congeladas) ni sobre
+        // eliminada (inmutable). Primera barrera explícita; el acople de
+        // abajo es la segunda (el padre congelado ni siquiera aceptaría el
+        // delta).
+        && obl(request.resource.data.reintegroId)
+             .get('condonacion', null) == null
+        && obl(request.resource.data.reintegroId)
+             .get('eliminacion', null) == null
+        // 4.6 (§2.5): sin entregas antes de confirmar — GRUPO EXPLÍCITO
+        // (hallazgo 1): la precedencia no debe partir la condición.
+        && (oblAfter(request.resource.data.reintegroId)
+              .get('confirmadaPor', null) != null
+            || obl(request.resource.data.reintegroId).contraparteUid == null)
+        // ACOPLE (3.8): el acumulador debe subir exactamente el monto escrito,
+        // sin exceder el monto de la obligación — un cliente malicioso no
+        // puede crear una entrega desincronizada:
+        && oblAfter(request.resource.data.reintegroId).devuelto
+             == obl(request.resource.data.reintegroId).devuelto
+                + request.resource.data.monto
+        && oblAfter(request.resource.data.reintegroId).devuelto
+             <= oblAfter(request.resource.data.reintegroId).monto;
+
+      allow delete: if false;   // 3.7: sin borrado físico, NUNCA.
+
+      // Update permitido SOLO como eliminación lógica (PO-7/DC-6) o corrección
+      // de monto, siempre acoplada al doc de la obligación:
+      allow update: if auth()
+        && esParticipante(resource.data.reintegroId)
+        && !('eliminacion' in resource.data)          // I-11: eliminada es inmutable
+        && resource.data.reintegroId == request.resource.data.reintegroId
+        && resource.data.registradoPor == request.resource.data.registradoPor
+        // OBLIGACIÓN ACTIVA (D-9): sobre condonada/eliminada ninguna
+        // entrega se toca (además el acople del padre lo rechazaría).
+        && obl(resource.data.reintegroId).get('condonacion', null) == null
+        && obl(resource.data.reintegroId).get('eliminacion', null) == null
+        && (
+          // (i) Eliminación lógica de la entrega + recálculo acoplado.
+          // hasOnly: SOLO se agrega `eliminacion` (un cliente no puede
+          // colar otros campos; monto intacto por definición del diff):
+          ( request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['eliminacion'])
+            && request.resource.data.get('eliminacion', null) != null
+            && request.resource.data.eliminacion.eliminadaPor == uid()
+            && oblAfter(resource.data.reintegroId).devuelto
+                 == obl(resource.data.reintegroId).devuelto - resource.data.monto
+            && oblAfter(resource.data.reintegroId).devuelto >= 0
+          )
+          // (ii) Edición de monto (PO-7: saldo resultante, sin sobrepago).
+          // hasOnly: SOLO cambia `monto`:
+          || ( request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['monto'])
+               && request.resource.data.monto > 0
+               && request.resource.data.monto != resource.data.monto
+               && oblAfter(resource.data.reintegroId).devuelto
+                    == obl(resource.data.reintegroId).devuelto
+                       - resource.data.monto
+                       + request.resource.data.monto
+               && oblAfter(resource.data.reintegroId).devuelto
+                    <= oblAfter(resource.data.reintegroId).monto
+             )
+        );
+    }
+  }
+}
