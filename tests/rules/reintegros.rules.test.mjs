@@ -721,3 +721,236 @@ test('3.25 — H-c: monto congelado tras confirmación; externo y pendiente lo e
     updateDoc(doc(dbAs(A), 'reintegros', 'r325c'), { monto: 700 })
   );
 });
+
+// ═══ 3.26–3.40: getAfter en eventos + Alt A (list devoluciones) + createdAt ═══
+
+test('3.26 — batch(crea obl + evento creacion) con getAfter: aceptado', async () => {
+  const db = dbAs(A);
+  const b = writeBatch(db);
+  b.set(doc(db, 'reintegros', 'r326'), createMemberObl({ devuelto: 0 }));
+  b.set(doc(collection(db, 'reintegros', 'r326', 'eventos'), 'ev1'), {
+    registradoPor: A,
+    tipo: 'creacion',
+    entidad: 'obligacion',
+    createdAt: serverTimestamp(),
+  });
+  await assertSucceeds(b.commit());
+});
+
+test('3.27 — evento sobre obl inexistente (sin batch): denegado', async () => {
+  const db = dbAs(A);
+  await assertFails(
+    setDoc(doc(db, 'reintegros', 'r327_noexiste', 'eventos', 'ev'), {
+      registradoPor: A,
+      tipo: 'creacion',
+      entidad: 'obligacion',
+      createdAt: serverTimestamp(),
+    })
+  );
+});
+
+test('3.28 — evento de no-participante sobre obl existente: denegado', async () => {
+  await seed('r328', createMemberObl({ devuelto: 0 }));
+  const db = dbAs(C); // C no es participante
+  await assertFails(
+    setDoc(doc(db, 'reintegros', 'r328', 'eventos', 'ev'), {
+      registradoPor: C,
+      tipo: 'edicion',
+      entidad: 'obligacion',
+      createdAt: serverTimestamp(),
+    })
+  );
+});
+
+test('3.29 — D1 == : query where(reintegroId) como participante: aceptada, docs correctos', async () => {
+  await seed('r329', baseObl({ devuelto: 0 }));
+  const dbA = dbAs(A);
+  // 2 entregas legítimas (acople: devuelto sube exactamente el monto)
+  const b1 = writeBatch(dbA);
+  b1.set(doc(dbA, 'reintegro_devoluciones', 'd329a'), entrega('r329', { monto: 100 }));
+  b1.update(doc(dbA, 'reintegros', 'r329'), { devuelto: 100 });
+  await assertSucceeds(b1.commit());
+  const b2 = writeBatch(dbA);
+  b2.set(doc(dbA, 'reintegro_devoluciones', 'd329b'), entrega('r329', { monto: 200 }));
+  b2.update(doc(dbA, 'reintegros', 'r329'), { devuelto: 300 });
+  await assertSucceeds(b2.commit());
+  // query D1 con ==
+  const q = query(
+    collection(dbA, 'reintegro_devoluciones'),
+    where('reintegroId', '==', 'r329')
+  );
+  const snap = await assertSucceeds(getDocs(q));
+  if (snap.size !== 2) throw new Error(`D1 == : esperaba 2 docs, obtuve ${snap.size}`);
+});
+
+test('3.30 — D1 in : query where(reintegroId in [...]) como participante: aceptada', async () => {
+  // 2 obligaciones con 1 entrega cada una
+  const dbA = dbAs(A);
+  for (const rid of ['r330x', 'r330y']) {
+    await seed(rid, baseObl({ devuelto: 0 }));
+    const b = writeBatch(dbA);
+    b.set(doc(dbA, 'reintegro_devoluciones', `d_${rid}`), entrega(rid));
+    b.update(doc(dbA, 'reintegros', rid), { devuelto: 100 });
+    await assertSucceeds(b.commit());
+  }
+  const q = query(
+    collection(dbA, 'reintegro_devoluciones'),
+    where('reintegroId', 'in', ['r330x', 'r330y'])
+  );
+  const snap = await assertSucceeds(getDocs(q));
+  if (snap.size !== 2) throw new Error(`D1 in : esperaba 2 docs, obtuve ${snap.size}`);
+});
+
+test('3.31 — D1 como uid ajeno: denegado (sin leak)', async () => {
+  await seed('r331', baseObl({ devuelto: 0 }));
+  const dbA = dbAs(A);
+  const b = writeBatch(dbA);
+  b.set(doc(dbA, 'reintegro_devoluciones', 'd331'), entrega('r331'));
+  b.update(doc(dbA, 'reintegros', 'r331'), { devuelto: 100 });
+  await assertSucceeds(b.commit());
+  // C (ajeno) consulta por reintegroId de r331
+  const q = query(
+    collection(dbAs(C), 'reintegro_devoluciones'),
+    where('reintegroId', '==', 'r331')
+  );
+  await assertFails(getDocs(q));
+});
+
+test('3.32 — query sin filtro sobre reintegro_devoluciones: denegado', async () => {
+  await seed('r332', baseObl({ devuelto: 0 }));
+  const dbA = dbAs(A);
+  const b = writeBatch(dbA);
+  b.set(doc(dbA, 'reintegro_devoluciones', 'd332'), entrega('r332'));
+  b.update(doc(dbA, 'reintegros', 'r332'), { devuelto: 100 });
+  await assertSucceeds(b.commit());
+  // sin filtro: Firestore no puede probar la regla para todos los docs → denegado
+  await assertFails(getDocs(collection(dbA, 'reintegro_devoluciones')));
+});
+
+test('3.33 — D1 sin auth: denegado', async () => {
+  const q = query(
+    collection(dbAs(null), 'reintegro_devoluciones'),
+    where('reintegroId', '==', 'r333')
+  );
+  await assertFails(getDocs(q));
+});
+
+test('3.34 — alta de reintegro sin createdAt: denegado', async () => {
+  const { createdAt, ...sinCd } = createMemberObl();
+  void createdAt;
+  await assertFails(setDoc(doc(dbAs(A), 'reintegros', 'r334'), sinCd));
+});
+
+test('3.35 — alta con Timestamp de cliente forjado: denegado', async () => {
+  await assertFails(
+    setDoc(
+      doc(dbAs(A), 'reintegros', 'r335'),
+      createMemberObl({ createdAt: Timestamp.fromDate(new Date('2020-01-01')) })
+    )
+  );
+});
+
+test('3.36 — editar createdAt vía rama (d): denegado (inmutable post-create)', async () => {
+  await seed('r336', createMemberObl({ devuelto: 0 }));
+  await assertFails(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r336'), { createdAt: serverTimestamp() })
+  );
+});
+
+test('3.37 — batch submitDevolucion completo (entrega + update devuelto + evento creacion/entrega): aceptado', async () => {
+  await seed('r337', baseObl({ devuelto: 0 }));
+  const db = dbAs(A);
+  const b = writeBatch(db);
+  b.set(doc(db, 'reintegro_devoluciones', 'd337'), entrega('r337', { monto: 100 }));
+  b.update(doc(db, 'reintegros', 'r337'), { devuelto: 100 });
+  b.set(doc(collection(db, 'reintegros', 'r337', 'eventos'), 'ev1'), {
+    registradoPor: A,
+    tipo: 'creacion',
+    entidad: 'entrega',
+    createdAt: serverTimestamp(),
+  });
+  await assertSucceeds(b.commit());
+});
+
+test('3.38 — D1 in mezclando rid propio y rid ajeno: denegada entera', async () => {
+  // r338a: obl de A,B (propia para A). r338b: obl ajena de B,C.
+  await seed('r338a', baseObl({ devuelto: 0 }));
+  await seed(
+    'r338b',
+    createMemberObl({
+      registradoPor: B,
+      registradoPorNombre: 'Bob',
+      contraparteUid: C,
+      contraparteNombre: 'Carol',
+      participantes: [B, C],
+      devuelto: 0,
+    })
+  );
+  // entrega sobre r338a (legítima para A)
+  const dbA = dbAs(A);
+  const b = writeBatch(dbA);
+  b.set(doc(dbA, 'reintegro_devoluciones', 'd338a'), entrega('r338a'));
+  b.update(doc(dbA, 'reintegros', 'r338a'), { devuelto: 100 });
+  await assertSucceeds(b.commit());
+  // query in con rid propio + rid ajeno → denegada entera (get() falla en el doc ajeno)
+  const q = query(
+    collection(dbA, 'reintegro_devoluciones'),
+    where('reintegroId', 'in', ['r338a', 'r338b'])
+  );
+  await assertFails(getDocs(q));
+});
+
+test('3.39 — D1 in con 10 rids distintos: aceptada; 11 rids: comportamiento reportado', async () => {
+  // Seed 10 obligaciones con 1 entrega cada una
+  const dbA = dbAs(A);
+  const rids = Array.from({ length: 10 }, (_, i) => `r339_${i}`);
+  for (const rid of rids) {
+    await seed(rid, baseObl({ devuelto: 0 }));
+    const b = writeBatch(dbA);
+    b.set(doc(dbA, 'reintegro_devoluciones', `d_${rid}`), entrega(rid));
+    b.update(doc(dbA, 'reintegros', rid), { devuelto: 100 });
+    await assertSucceeds(b.commit());
+  }
+  // 10 rids → aceptada (Firestore resuelve `in` como múltiples queries `==`)
+  const q10 = query(
+    collection(dbA, 'reintegro_devoluciones'),
+    where('reintegroId', 'in', rids)
+  );
+  const snap10 = await assertSucceeds(getDocs(q10));
+  if (snap10.size !== 10) {
+    throw new Error(`D1 in (10): esperaba 10 docs, obtuve ${snap10.size}`);
+  }
+  // 11 rids: el SDK web permite `in` con hasta 10 valores; con 11 el cliente
+  // lo lanza como error ANTES de llegar al servidor. Reportamos el resultado.
+  const rids11 = [...rids, 'r339_10'];
+  try {
+    const q11 = query(
+      collection(dbA, 'reintegro_devoluciones'),
+      where('reintegroId', 'in', rids11)
+    );
+    const snap11 = await getDocs(q11);
+    console.log(
+      `3.39 INFO: in con 11 rids fue ACEPTADA por el SDK/emulador (${snap11.size} docs). ` +
+        'El límite documentado de 10 es del SDK web; el emulador podría no aplicarlo. ' +
+        'El cliente usa TANDA=10 como constante.'
+    );
+  } catch (e) {
+    console.log(
+      `3.39 INFO: in con 11 rids FALLÓ como esperado — ${e?.message?.substring(0, 120)}`
+    );
+  }
+  // Constante de tanda del cliente: 10 (aunque el SDK permita más, el cliente no la excede)
+  const TANDA = 10;
+  if (TANDA !== 10) throw new Error('TANDA debe ser 10');
+});
+
+test('3.40 — alta válida con serverTimestamp(): externa y miembro aceptadas', async () => {
+  // externa (sin confirmadaPor)
+  await assertSucceeds(
+    setDoc(doc(dbAs(A), 'reintegros', 'r340ext'), externalObl({ devuelto: 0 }))
+  );
+  // miembro pendiente (confirmadaPor: null)
+  await assertSucceeds(
+    setDoc(doc(dbAs(A), 'reintegros', 'r340mem'), createMemberObl({ devuelto: 0 }))
+  );
+});

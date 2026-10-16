@@ -28,6 +28,14 @@
 ## 3. Suite de reglas (`npm run test:rules`)
 
 - **Resultado final: 25/25 PASS** (3.1–3.25), run archivado (`EVIDENCIA-4.0-hbc-rules-suite.log`).
+- **Actualización post-spike 4.1 (16/10/2026):** la suite pasa a **40/40** con los tests
+  3.26–3.40 (getAfter en eventos, Alt A sobre `reintegro_devoluciones`, `createdAt ==
+  request.time`). Run archivado en el commit correspondiente.
+- **Costo de lecturas del `list` con Alt A (estimación, NO medida):** el `get()` en la regla
+  se evalúa una vez por cada doc devuelto; cada `get()` consume 1 lectura facturada. Para una
+  query `in` con ≤10 IDs que devuelve M docs: M lecturas de query + M lecturas de regla = 2M
+  totales. Con R-3 (≤30 entregas visibles): ≤3 queries de tanda 10 → 60–180 lecturas. Es una
+  estimación basada en la documentación de Firestore; no se midió con billing real.
 - Corridas intermedias (registro de iteración, no de fallo encubierto):
   - Run 1: 19/22 — 3 bugs del **test** (no de las reglas): instancias Firestore mezcladas en batches (3.8/3.15); 3.9 no contemplaba la guarda 4.6 (entregas pre-confirmación bloqueadas).
   - Run 2: 22/22 PASS (sin query `list`).
@@ -53,11 +61,17 @@
 | **H-b** | `sentido` editable en la rama (d); `movimientoInicial` también editable; `concepto` podía vaciarse | **RESUELTO** — rama (d) reescrita como **lista blanca** (`hasOnly(['concepto','contraparteNombre','registradoPorNombre'])`). Todo lo demás congelado por defecto: `sentido`, `movimientoInicial`, monto, devuelto, constancias, confirmación, `gastoVinculadoId` y cualquier campo futuro. Cada campo exige `is string` (como el alta) y `concepto.size() > 0`. `movimientoInicial` congelado explícitamente (registro de qué movimiento se generó al alta). `concepto` congelado post-confirmación (parte del acuerdo bilateral) — decisión explícita del 16/10/2026. | 3.24: sentido→rechazado; movimientoInicial→rechazado; concepto vacío→rechazado; campo `foo` (fuera de lista)→rechazado; `contraparteNombre` no-string→rechazado; `registradoPorNombre` no-string→rechazado; editado por contraparte→rechazado; sobre condonada→rechazado; positivos de los 3 campos editables. |
 | **H-c** | `monto` editable tras confirmar | **RESUELTO** — rama (c) exige `resource.data.get('confirmadaPor', null) == null`. Se usa `.get()` con default para no romper obligaciones **externas** donde el campo no existe en el documento. Decisión: congelar el monto post-confirmación (no resetear la confirmación). | 3.25: miembro confirmado→rechazado; miembro pendiente (campo en null)→aceptado; externa (campo ausente)→aceptado. |
 
+## 6. Hallazgo H-e — pendiente abierto (spike 4.1, 16/10/2026)
+
+| ID | Hallazgo | Estado |
+|---|---|---|
+| **H-e** | A puede crear una obligación con `contraparteUid` de un tercero B sin relación previa (sin que B lo sepa ni lo acepte). Las reglas no validan que exista vínculo entre A y B. | **PENDIENTE ABIERTO — a decidir antes de abrir la app al público.** Confirmado empíricamente en spike 4.1 (E11: ACEPTADO). Corrección requiere diseño de red de confianza / aceptación de contraparte (fuera de alcance de 4.1). |
+
 **Equivalencia Bloque A vs backup de consola (re-verificada antes del push):** diff vacío
 (solo difieren los dos `}` de cierre de `service`/`match` que viven al final del archivo,
 después del Bloque B). SHA-256 del backup sin cambios: `9769979C…C57792`.
 
-## 6. Verificaciones de app (criterios de done de 4.0)
+## 7. Verificaciones de app (criterios de done de 4.0)
 
 | Criterio | Resultado |
 |---|---|
@@ -66,7 +80,7 @@ después del Bloque B). SHA-256 del backup sin cambios: `9769979C…C57792`.
 | App escribe `eventos` tipo `confirmacion` | **NO** — grep `app/**/*.{js,jsx}`: 0 coincidencias de `reintegro|confirmacion|confirmadaPor` (el módulo no existe aún; se construye en 4.1+). Las reglas además solo aceptan `['creacion','edicion','eliminacion','condonacion']` (3.14). |
 | `firestore.indexes.json` | Índice R1' (`participantes` array_contains + `createdAt` desc) pre-aprobado (riesgo R-2) |
 
-## 7. Pasos posteriores NO autorizados por esta evidencia
+## 8. Pasos posteriores NO autorizados por esta evidencia
 
 1. ~~**Commit de 4.0 en `staging` + push a `origin/staging`**~~ — ejecutado: `ff47291` (gate inicial) y commit posterior con H-b/H-c resueltos + suite 25/25.
 2. **`git push origin staging:main`** — requiere aprobación explícita posterior.

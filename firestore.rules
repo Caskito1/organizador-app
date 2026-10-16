@@ -251,7 +251,8 @@ match /fixed_expense_entries/{entryId} {
         && ('confirmadaPor' in request.resource.data
             ? (request.resource.data.contraparteUid != null
                && request.resource.data.confirmadaPor == null)
-            : request.resource.data.contraparteUid == null);
+            : request.resource.data.contraparteUid == null)
+        && request.resource.data.createdAt == request.time;
 
       allow delete: if false;   // Criterio 3.7: sin borrado físico, NUNCA.
 
@@ -367,8 +368,13 @@ match /fixed_expense_entries/{entryId} {
       match /eventos/{eid} {
         allow get, list: if esParticipante(rid);
         allow create: if auth()
-          // Solo participantes de ESTA obligación pueden escribir su bitácora:
-          && esParticipante(rid)
+          // Solo participantes de ESTA obligación pueden escribir su bitácora.
+          // getAfter (spike 4.1): lee el estado POST-transacción; en
+          // crearObligacion la obl se crea en el mismo batch y en
+          // submitDevolucion ya existe. getAfter es null solo si la obl no
+          // existe ni en pre ni en post → evento huérfano denegado.
+          && request.auth.uid in
+               getAfter(/databases/$(database)/documents/reintegros/$(rid)).data.participantes
           && request.resource.data.registradoPor == uid()
           && request.resource.data.tipo in
                ['creacion', 'edicion', 'eliminacion', 'condonacion']
@@ -384,17 +390,14 @@ match /fixed_expense_entries/{entryId} {
     // ─── reintegro_devoluciones ────────────────────────────────────────
     match /reintegro_devoluciones/{did} {
 
-      // Lectura SOLO por get individual (hallazgo 6 corregido): la app
-      // resuelve ids visibles vía la query D1 sobre `reintegros` y hace
-      // get por cada id (volumen v1 bajo, ≤30 por R-3). `list` queda
-      // deshabilitado: Firestore NO puede evaluar un filtro where(reintegroId)
-      // dentro de reglas, así que un list habilitado expondría entregas
-      // ajenas a cualquier autenticado. (La versión anterior usaba
-      // request.resource.data —inexistente en lecturas— y habilitaba
-      // `list` contradictoriamente con su propia nota; ambas cosas
-      // eliminadas.)
+      // List permitido si la query fija reintegroId con == o in (máx. 10)
+      // y el usuario es participante de esa obligación. Sin filtro, uid
+      // ajeno o id ajeno dentro del in → la query se deniega entera (sin
+      // leak). Costo: 1 get() de reglas por doc devuelto. Tests 3.29–3.33,
+      // 3.38, 3.39 (spike 4.1).
       allow get: if auth() && esParticipante(resource.data.reintegroId);
-      allow list: if false;
+      allow list: if auth()
+        && uid() in get(/databases/$(database)/documents/reintegros/$(resource.data.reintegroId)).data.participantes;
 
       // Alta de entrega (4.3, criterio 3.8 — ACOPLE D-6):
       allow create: if auth()
