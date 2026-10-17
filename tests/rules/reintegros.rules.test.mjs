@@ -954,3 +954,65 @@ test('3.40 — alta válida con serverTimestamp(): externa y miembro aceptadas',
     setDoc(doc(dbAs(A), 'reintegros', 'r340mem'), createMemberObl({ devuelto: 0 }))
   );
 });
+
+// ─── 3.41–3.44 — montos SIEMPRE enteros en pesos (decisión 16/10/2026) ───
+// Reglas: `is int` en create de reintegros, create de reintegro_devoluciones,
+// rama (c) de update (edit monto de obl) y rama (ii) de update (edit monto de
+// entrega). Reemplazan `is number`. Si se admiten centavos, migrar a unidad
+// menor (centavos enteros).
+
+test('3.41 — monto no entero (0.5) en create de reintegros: rechazado; entero aceptado', async () => {
+  // negativo: monto 0.5
+  await assertFails(
+    setDoc(doc(dbAs(A), 'reintegros', 'r341dec'), externalObl({ monto: 0.5, devuelto: 0 }))
+  );
+  // positivo: monto entero (500)
+  await assertSucceeds(
+    setDoc(doc(dbAs(A), 'reintegros', 'r341int'), externalObl({ monto: 500, devuelto: 0 }))
+  );
+});
+
+test('3.42 — monto no entero (0.5) en create de reintegro_devoluciones: rechazado; entero aceptado', async () => {
+  await seed('r342', baseObl({ monto: 1000, devuelto: 0 }));
+  const db = dbAs(A);
+  // negativo: entrega con monto 0.5 + devuelto 0.5
+  const bDec = writeBatch(db);
+  bDec.set(doc(db, 'reintegro_devoluciones', 'd342dec'), entrega('r342', { monto: 0.5 }));
+  bDec.update(doc(db, 'reintegros', 'r342'), { devuelto: 0.5 });
+  await assertFails(bDec.commit());
+  // positivo: entrega entera 100 + devuelto 100
+  const bInt = writeBatch(db);
+  bInt.set(doc(db, 'reintegro_devoluciones', 'd342int'), entrega('r342', { monto: 100 }));
+  bInt.update(doc(db, 'reintegros', 'r342'), { devuelto: 100 });
+  await assertSucceeds(bInt.commit());
+});
+
+test('3.43 — edit monto de obl a no entero (0.5) vía rama (c): rechazado; entero aceptado', async () => {
+  // rama (c): solo registrador, devuelto==0, sin confirmadaPor/condonacion.
+  // Externa editable (campo ausente OK para rama (c) con get default).
+  await seed('r343', externalObl({ monto: 500, devuelto: 0 }));
+  // negativo: monto a 0.5
+  await assertFails(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r343'), { monto: 0.5 })
+  );
+  // positivo: monto a 700 (entero)
+  await assertSucceeds(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r343'), { monto: 700 })
+  );
+});
+
+test('3.44 — edit monto de entrega a no entero (0.5) vía rama (ii): rechazado; entero aceptado', async () => {
+  await seed('r344', baseObl({ monto: 1000, devuelto: 100 }));
+  await seedEntrega('d344', entrega('r344', { monto: 100 }));
+  const db = dbAs(A);
+  // negativo: monto de entrega a 0.5 (devuelto se recalcularía)
+  const bDec = writeBatch(db);
+  bDec.update(doc(db, 'reintegro_devoluciones', 'd344'), { monto: 0.5 });
+  bDec.update(doc(db, 'reintegros', 'r344'), { devuelto: 0.5 });
+  await assertFails(bDec.commit());
+  // positivo: monto de entrega a 150 (entero, devuelto recalculado a 150)
+  const bInt = writeBatch(db);
+  bInt.update(doc(db, 'reintegro_devoluciones', 'd344'), { monto: 150 });
+  bInt.update(doc(db, 'reintegros', 'r344'), { devuelto: 150 });
+  await assertSucceeds(bInt.commit());
+});

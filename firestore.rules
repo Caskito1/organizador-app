@@ -237,7 +237,8 @@ match /fixed_expense_entries/{entryId} {
                && request.resource.data.contraparteUid != uid()))
         && request.resource.data.contraparteNombre is string
         && request.resource.data.sentido in ['por_cobrar', 'por_devolver']
-        && request.resource.data.monto is number
+        // Montos SIEMPRE enteros en pesos (decisión 16/10/2026): sin centavos.
+        && request.resource.data.monto is int
         && request.resource.data.monto > 0
         && request.resource.data.devuelto == 0
         && request.resource.data.movimientoInicial in ['ninguno', 'salida', 'entrada']
@@ -297,6 +298,8 @@ match /fixed_expense_entries/{entryId} {
                && request.resource.data.diff(resource.data).affectedKeys()
                    .hasOnly(['monto'])
                && request.resource.data.monto != resource.data.monto
+               // Montos SIEMPRE enteros en pesos (decisión 16/10/2026).
+               && request.resource.data.monto is int
                && request.resource.data.monto > 0
                && request.resource.data.monto >= request.resource.data.devuelto
                && resource.data.devuelto == 0
@@ -403,7 +406,8 @@ match /fixed_expense_entries/{entryId} {
       allow create: if auth()
         && request.resource.data.reintegroId is string
         && esParticipante(request.resource.data.reintegroId)
-        && request.resource.data.monto is number
+        // Montos SIEMPRE enteros en pesos (decisión 16/10/2026).
+        && request.resource.data.monto is int
         && request.resource.data.monto > 0
         && request.resource.data.registradoPor == uid()
         && request.resource.data.fechaPago != null
@@ -460,6 +464,8 @@ match /fixed_expense_entries/{entryId} {
           // hasOnly: SOLO cambia `monto`:
           || ( request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['monto'])
+               // Montos SIEMPRE enteros en pesos (decisión 16/10/2026).
+               && request.resource.data.monto is int
                && request.resource.data.monto > 0
                && request.resource.data.monto != resource.data.monto
                && oblAfter(resource.data.reintegroId).devuelto

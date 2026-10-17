@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:rules": "firebase emulators:exec --only firestore --project demo-finanzas \"node --test tests/rules/\"",
-    "harness:reintegros": "firebase emulators:exec --only firestore --project demo-finanzas \"node --test tests/harness/\""
+    "harness:reintegros": "firebase emulators:exec --only firestore --project demo-finanzas \"node --experimental-detect-module --test tests/harness/\""
   },
   "dependencies": {
     "firebase": "^12.12.1",
