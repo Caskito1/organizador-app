@@ -34,6 +34,7 @@ export async function submitReintegro({
   concepto,
   detalle,
   movimientoInicial,
+  rid: ridParam,
 }) {
   // Montos: SIEMPRE enteros en pesos (decisión del usuario, 16/10/2026).
   // Sin centavos; si se admiten centavos, migrar a unidad menor (centavos).
@@ -71,8 +72,32 @@ export async function submitReintegro({
     );
   }
 
-  const participantes = contraparteUid ? [uid, contraparteUid] : [uid];
-  const rid = doc(collection(db, "reintegros")).id;
+  // Ajuste 6 (4.2): la UI puede enviar "" o undefined (estado vacío del
+  // selector) para contraparte externa; se normaliza a null ANTES de armar
+  // participantes y el payload. "" JAMÁS se persiste. Tipos no-string
+  // (p. ej. números) son error de validación.
+  const cpUid =
+    contraparteUid === undefined ||
+    contraparteUid === null ||
+    contraparteUid === ""
+      ? null
+      : contraparteUid;
+  if (cpUid !== null && typeof cpUid !== "string") {
+    throw new ReintegroError(
+      "VALIDACION",
+      `contraparteUid inválido: ${String(contraparteUid)}`,
+    );
+  }
+
+  const participantes = cpUid ? [uid, cpUid] : [uid];
+  // rid opcional (4.2): el ReintegroModal lo genera UNA sola vez al abrir y
+  // lo reutiliza en cada reintento — si un intento por timeout de UI terminó
+  // commiteando, el siguiente escribe sobre el MISMO doc (nunca duplica).
+  // Sin parámetro (harness 4.1 y llamadas existentes): se genera acá.
+  if (ridParam !== undefined && !ridParam) {
+    throw new ReintegroError("VALIDACION", "rid debe ser string no vacío");
+  }
+  const rid = ridParam || doc(collection(db, "reintegros")).id;
 
   await runTransaction(db, async (tx) => {
     // Shape exacto exigido por las reglas (create de reintegros):
@@ -81,7 +106,7 @@ export async function submitReintegro({
     const payload = {
       registradoPor: uid,
       registradoPorNombre: uidNombre.trim(),
-      contraparteUid: contraparteUid ?? null,
+      contraparteUid: cpUid,
       contraparteNombre: contraparteNombre.trim(),
       participantes,
       groupId: groupId ?? null,
@@ -96,7 +121,7 @@ export async function submitReintegro({
     };
     // 4.6: confirmadaPor presente (en null) solo si hay contraparte miembro;
     // para externos el campo debe estar AUSENTE (regla de create).
-    if (contraparteUid) {
+    if (cpUid) {
       payload.confirmadaPor = null;
     }
 

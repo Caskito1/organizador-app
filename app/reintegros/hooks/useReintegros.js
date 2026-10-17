@@ -21,6 +21,10 @@ import {
   salidasDelMes,
 } from "../helpers/modelo";
 
+// Tope de reintentos de la suscripción (ajuste 12): tras agotarlos queda el
+// error visible, sin loop infinito. Solo aplica a `unavailable`.
+const MAX_REINTENTOS = 5;
+
 export default function useReintegros(selectedMonth) {
   const { user } = useAuth();
 
@@ -31,27 +35,78 @@ export default function useReintegros(selectedMonth) {
   const [obligaciones, setObligaciones] = useState([]);
   const [devoluciones, setDevoluciones] = useState([]);
   const [errorState, setErrorState] = useState(null);
+  const [reintentando, setReintentando] = useState(false);
+  // Reintento MANUAL (lote 3): cuando los reintentos automáticos se agotan
+  // queda el error visible; `reintentar()` incrementa el nonce y el effect se
+  // re-ejecuta con la suscripción y los intentos limpios.
+  const [retryNonce, setRetryNonce] = useState(0);
 
+  // Los errores de onSnapshot son TERMINALES para esa suscripción (el SDK no
+  // la recupera solo): sin reintento, un corte de red deja la vista en error
+  // permanente. Ajuste 12: re-suscribimos SOLO ante `unavailable` (corte de
+  // red / servicio caído), con backoff exponencial (1s → 15s) y TOPE de
+  // intentos; `permission-denied` y `failed-precondition` son definiciones
+  // de la consulta (reintentarlos taparía el motivo real). Al recibir datos
+  // se limpia el error y se reinicia el backoff.
   useEffect(() => {
     if (!user?.uid) return;
 
-    const unsubscribe = subscribeReintegros({
-      db,
-      uid: user.uid,
-      onData: ({ obligaciones, devoluciones }) => {
-        setDataUid(user.uid);
-        setObligaciones(obligaciones);
-        setDevoluciones(devoluciones);
-        setErrorState(null);
-      },
-      onError: (e) => {
-        setDataUid(user.uid);
-        setErrorState(e);
-      },
-    });
+    let cancelled = false;
+    let unsubscribe = null;
+    let retryTimer = null;
+    let attempts = 0;
 
-    return () => unsubscribe?.();
-  }, [user?.uid]);
+    function subscribe() {
+      unsubscribe = subscribeReintegros({
+        db,
+        uid: user.uid,
+        onData: ({ obligaciones, devoluciones }) => {
+          if (cancelled) return;
+          attempts = 0;
+          setReintentando(false);
+          setDataUid(user.uid);
+          setObligaciones(obligaciones);
+          setDevoluciones(devoluciones);
+          setErrorState(null);
+        },
+        onError: (e) => {
+          if (cancelled || retryTimer) return;
+          unsubscribe?.();
+          unsubscribe = null;
+          setDataUid(user.uid);
+          setErrorState(e);
+          const reintenta =
+            e?.code === "unavailable" && attempts < MAX_REINTENTOS;
+          if (!reintenta) {
+            setReintentando(false);
+            return;
+          }
+          setReintentando(true);
+          const delay = Math.min(1000 * 2 ** attempts, 15000);
+          attempts += 1;
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            if (!cancelled) subscribe();
+          }, delay);
+        },
+      });
+    }
+
+    subscribe();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      unsubscribe?.();
+    };
+  }, [user?.uid, retryNonce]);
+
+  // Reintento manual: resetea la suscripción (effect vuelve a correr con
+  // attempts = 0) y marca `reintentando` para que la UI oculte el botón.
+  function reintentar() {
+    setReintentando(true);
+    setRetryNonce((n) => n + 1);
+  }
 
   const uid = user?.uid ?? null;
   const loading = !uid || dataUid !== uid;
@@ -242,6 +297,8 @@ export default function useReintegros(selectedMonth) {
   return {
     loading,
     error,
+    reintentando,
+    reintentar,
     obligaciones: obligacionesGated,
     devoluciones: devolucionesGated,
     pendientes,

@@ -7,6 +7,7 @@ import ModoUnico from "./components/ModoUnico";
 import ModoCompra from "./components/ModoCompra";
 import ModoTransferencia from "./components/ModoTransferencia";
 import ModoIngreso from "./components/ModoIngreso";
+import ReintegroModal from "./components/reintegros/ReintegroModal";
 
 import BackBtn from "../components/ui/BackBtn";
 
@@ -17,6 +18,7 @@ export default function Agregar() {
   const router = useRouter();
 
   const [modo, setModo] = useState(null);
+  const [modalReintegro, setModalReintegro] = useState(false);
 
   return (
     <Appshell>
@@ -119,6 +121,35 @@ export default function Agregar() {
               </p>
             </button>
           </SectionBlock>
+
+          {/* Separador */}
+          <div className="my-6 h-px bg-[rgba(255,255,255,0.06)]" />
+
+          {/* REINTEGROS */}
+          <SectionBlock className="gap-3">
+            <div className="mb-1">
+              <p className="text-[11px] font-medium uppercase tracking-[0.5px] text-text-muted">
+                Reintegros
+              </p>
+
+              <p className="mt-[2px] text-[13px] text-text-muted">
+                Registra quién le debe a quién.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setModalReintegro(true)}
+              className="w-full rounded-[18px] border border-[rgba(138,100,255,0.3)] bg-glass px-5 py-5 text-left backdrop-blur-[16px] transition-all duration-200 hover:border-accent2"
+            >
+              <p className="mb-1 font-sora text-[15px] font-bold text-text">
+                Reintegro
+              </p>
+
+              <p className="text-[13px] leading-[1.5] text-text-muted">
+                Prestamos, adelantos y deudas entre personas.
+              </p>
+            </button>
+          </SectionBlock>
         </>
       )}
 
@@ -136,6 +167,10 @@ export default function Agregar() {
 
       {modo === "ingreso" && (
         <ModoIngreso onBack={() => setModo(null)} />
+      )}
+
+      {modalReintegro && (
+        <ReintegroModal onClose={() => setModalReintegro(false)} />
       )}
     </Appshell>
   );

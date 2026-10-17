@@ -23,6 +23,7 @@
 //   11 (H11)  monto NO entero → MONTO_INVALIDO (cliente) y `is int` (reglas)
 //   12 (H12)  validaciones de entrada: NO_ENCONTRADA, campos requeridos
 //   13 (H13)  entradas/salidas I-8: movimientoInicial solo si registradoPor === uid
+//   14 (H14)  contraparteUid externa '': null (ajuste 6, 4.2) + tipo inválido
 //   +  (HS0)  suscripción con 0 obligaciones (sin D1 con lista vacía)
 //   +  (HS1)  alta nueva → re-emisión de la suscripción
 //   +  (HS2)  batching TANDA: 12 obls → 12 entregas traídas
@@ -881,6 +882,92 @@ test("H13 — entradas/salidas I-8: movimientoInicial propio sí, ajeno no (cont
     entradasDelMes({ obligaciones, entregas, uid: A, start, nextStart }),
     0,
     "contraparte A: sin entradas",
+  );
+});
+
+// ═══ Caso 14 — contraparteUid externa: '', null y undefined → null ═══
+//
+// Ajuste 6 (4.2): la UI puede enviar "" (estado vacío del selector) o
+// undefined; el helper debe normalizarlos a null (shape de reglas para
+// externa: sin confirmadaPor, participantes solo con el registrador). ""
+// JAMÁS se persiste. Un tipo no-string es error de validación y no escribe.
+
+test("H14 — contraparteUid externa: '', null y undefined → null en Firestore", async () => {
+  const casos = [
+    { label: "string vacío", rid: "h14_ext_vacio", contraparteUid: "" },
+    { label: "null", rid: "h14_ext_null", contraparteUid: null },
+    {
+      label: "undefined",
+      rid: "h14_ext_undefined",
+      contraparteUid: undefined,
+    },
+  ];
+
+  for (const { label, rid, contraparteUid } of casos) {
+    await submitReintegro({
+      db: dbAs(A),
+      uid: A,
+      uidNombre: "Alice",
+      sentido: "por_devolver",
+      monto: 250,
+      contraparteUid,
+      contraparteNombre: "Proveedor",
+      groupId: null,
+      concepto: `Alta externa (${label})`,
+      detalle: null,
+      movimientoInicial: "ninguno",
+      rid,
+    });
+
+    const obl = await readObl(rid, A);
+    assert.equal(
+      obl.contraparteUid,
+      null,
+      `contraparteUid debe persistirse como null (${label})`,
+    );
+    assert.deepEqual(
+      obl.participantes,
+      [A],
+      `participantes = [registrador] (${label})`,
+    );
+    assert.ok(
+      !("confirmadaPor" in obl),
+      `sin confirmadaPor para externa (${label})`,
+    );
+  }
+
+  // Tipo inválido (número): VALIDACION del cliente y SIN escritura residual.
+  // La verificación de no-residuo es con acceso rules-disabled: bajo reglas,
+  // leer un doc inexistente deniega (resource null en L219, sin leak de
+  // existencia — ver nota H12), no devuelve exists()===false.
+  const ridBad = "h14_ext_bad_type";
+  let err = null;
+  await submitReintegro({
+    db: dbAs(A),
+    uid: A,
+    uidNombre: "Alice",
+    sentido: "por_devolver",
+    monto: 250,
+    contraparteUid: 123,
+    contraparteNombre: "Proveedor",
+    groupId: null,
+    concepto: "Alta con tipo inválido",
+    detalle: null,
+    movimientoInicial: "ninguno",
+    rid: ridBad,
+  }).catch((e) => {
+    err = e;
+  });
+  assert.ok(err instanceof ReintegroError, "tipo inválido → ReintegroError");
+  assert.equal(err?.code, "VALIDACION");
+  let snapBad;
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    snapBad = await getDoc(doc(ctx.firestore(), "reintegros", ridBad));
+  });
+  assert.equal(
+    snapBad.exists(),
+    false,
+    "sin escritura residual con tipo inválido",
   );
 });
 
