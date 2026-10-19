@@ -54,8 +54,6 @@ function baseObl(over = {}) {
     concepto: 'Alquiler octubre',
     gastoVinculadoId: null,
     createdAt: serverTimestamp(),
-    confirmadaPor: B,
-    confirmadaAt: serverTimestamp(),
     ...over,
   };
 }
@@ -79,9 +77,9 @@ function externalObl(over = {}) {
 }
 
 function createMemberObl(over = {}) {
-  const { confirmadaAt, ...rest } = baseObl({ confirmadaPor: null, ...over });
-  void confirmadaAt;
-  return rest;
+  // 17/10/2026: sin confirmación bilateral — miembro y externa comparten
+  // el mismo shape (sin confirmadaPor/confirmadaAt).
+  return baseObl(over);
 }
 
 function entrega(rid, over = {}) {
@@ -218,7 +216,7 @@ test('3.8 — acople devolucion-obligacion (getAfter): sin update, delta incorre
   await assertFails(bD.commit());
 });
 
-test('3.9 — positiva: ambas partes legitimas leen y escriben (alta + confirmacion + devolucion en batch)', async () => {
+test('3.9 — positiva: ambas partes legitimas leen y escriben (alta + devolucion en batch)', async () => {
   const dbA = dbAs(A);
   const dbB = dbAs(B);
   const rid = 'r39';
@@ -227,13 +225,7 @@ test('3.9 — positiva: ambas partes legitimas leen y escriben (alta + confirmac
   );
   await assertSucceeds(getDoc(doc(dbA, 'reintegros', rid)));
 
-  await assertSucceeds(
-    updateDoc(doc(dbB, 'reintegros', rid), {
-      confirmadaPor: B,
-      confirmadaAt: serverTimestamp(),
-    })
-  );
-
+  // 17/10/2026: sin confirmación — ambos pueden pagar de inmediato.
   const bA = writeBatch(dbA);
   bA.set(doc(dbA, 'reintegro_devoluciones', 'd39a'), entrega(rid, { monto: 100 }));
   bA.update(doc(dbA, 'reintegros', rid), { devuelto: 100 });
@@ -565,39 +557,38 @@ test('3.19 — integridad de constancias en escritura ordinaria', async () => {
   );
 });
 
-test('3.20 — transicion de confirmacion a nivel reglas', async () => {
-  await seed('r320', baseObl({ confirmadaPor: null, confirmadaAt: null }));
-  const dbB = dbAs(B);
-  const dbA = dbAs(A);
+test('3.20 — confirmadaPor eliminado (17/10/2026): prohibido en create y no escribible en update', async () => {
+  // create con el campo (aunque en null): rechazado
   await assertFails(
-    updateDoc(doc(dbB, 'reintegros', 'r320'), {
+    setDoc(
+      doc(dbAs(A), 'reintegros', 'r320c'),
+      createMemberObl({ confirmadaPor: null, concepto: 'nace-con-campo' })
+    )
+  );
+  await assertFails(
+    setDoc(
+      doc(dbAs(A), 'reintegros', 'r320e'),
+      createMemberObl({
+        confirmadaPor: B,
+        confirmadaAt: serverTimestamp(),
+        concepto: 'nace-ya-confirmada',
+      })
+    )
+  );
+  // update que agrega el campo: sin rama que lo permita → rechazado
+  await seed('r320', baseObl());
+  await assertFails(
+    updateDoc(doc(dbAs(B), 'reintegros', 'r320'), {
       confirmadaPor: B,
       confirmadaAt: serverTimestamp(),
-      monto: 2000,
     })
   );
   await assertFails(
-    updateDoc(doc(dbA, 'reintegros', 'r320'), {
-      confirmadaPor: A,
-      confirmadaAt: serverTimestamp(),
-    })
+    updateDoc(doc(dbAs(B), 'reintegros', 'r320'), { confirmadaPor: null })
   );
+  // positivo: el mismo doc sigue editable en campos permitidos ((d))
   await assertSucceeds(
-    updateDoc(doc(dbB, 'reintegros', 'r320'), {
-      confirmadaPor: B,
-      confirmadaAt: serverTimestamp(),
-    })
-  );
-
-  await seed('r320d', baseObl());
-  await assertFails(
-    updateDoc(doc(dbB, 'reintegros', 'r320d'), { confirmadaPor: null })
-  );
-  await assertFails(
-    updateDoc(doc(dbB, 'reintegros', 'r320d'), {
-      confirmadaPor: null,
-      confirmadaAt: null,
-    })
+    updateDoc(doc(dbAs(A), 'reintegros', 'r320'), { concepto: 'editado' })
   );
 });
 
@@ -651,7 +642,7 @@ test('3.23 — list de reintegros: array-contains ajeno vacio acepta; sin filtro
 });
 
 test('3.24 — H-b: lista blanca de (d) — congelados, tipos, campo desconocido, no-registrador, condonada; positivos', async () => {
-  // base pendiente de confirmación para que (d) esté disponible
+  // base miembro para el ejercicio de (d)
   await seed('r324a', createMemberObl({ devuelto: 0 }));
   const dbA = dbAs(A);
   // sentido inmutable
@@ -704,21 +695,25 @@ test('3.24 — H-b: lista blanca de (d) — congelados, tipos, campo desconocido
   );
 });
 
-test('3.25 — H-c: monto congelado tras confirmación; externo y pendiente lo editan', async () => {
-  // miembro CONFIRMADO: monto congelado
+test('3.25 — H-c: monto editable con devuelto==0 (miembro y externa); inmutable con devuelto>0 o no-registrador', async () => {
+  // miembro con devuelto 0: monto editable por el registrador
   await seed('r325a', baseObl({ devuelto: 0 }));
-  await assertFails(
+  await assertSucceeds(
     updateDoc(doc(dbAs(A), 'reintegros', 'r325a'), { monto: 1200 })
   );
-  // miembro PENDIENTE (campo en null): monto editable
-  await seed('r325b', createMemberObl({ devuelto: 0 }));
+  // externa con devuelto 0: monto editable
+  await seed('r325b', externalObl({ devuelto: 0 }));
   await assertSucceeds(
-    updateDoc(doc(dbAs(A), 'reintegros', 'r325b'), { monto: 1200 })
+    updateDoc(doc(dbAs(A), 'reintegros', 'r325b'), { monto: 700 })
   );
-  // EXTERNA (campo ausente del doc): monto editable
-  await seed('r325c', externalObl({ devuelto: 0 }));
-  await assertSucceeds(
-    updateDoc(doc(dbAs(A), 'reintegros', 'r325c'), { monto: 700 })
+  // devuelto > 0: monto inmutable
+  await seed('r325c', baseObl({ devuelto: 100 }));
+  await assertFails(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r325c'), { monto: 1200 })
+  );
+  // no-registrador: rechazado
+  await assertFails(
+    updateDoc(doc(dbAs(B), 'reintegros', 'r325a'), { monto: 1300 })
   );
 });
 
@@ -945,11 +940,11 @@ test('3.39 — D1 in con 10 rids distintos: aceptada; 11 rids: comportamiento re
 });
 
 test('3.40 — alta válida con serverTimestamp(): externa y miembro aceptadas', async () => {
-  // externa (sin confirmadaPor)
+  // externa
   await assertSucceeds(
     setDoc(doc(dbAs(A), 'reintegros', 'r340ext'), externalObl({ devuelto: 0 }))
   );
-  // miembro pendiente (confirmadaPor: null)
+  // miembro (mismo shape, sin confirmadaPor)
   await assertSucceeds(
     setDoc(doc(dbAs(A), 'reintegros', 'r340mem'), createMemberObl({ devuelto: 0 }))
   );
@@ -988,7 +983,7 @@ test('3.42 — monto no entero (0.5) en create de reintegro_devoluciones: rechaz
 });
 
 test('3.43 — edit monto de obl a no entero (0.5) vía rama (c): rechazado; entero aceptado', async () => {
-  // rama (c): solo registrador, devuelto==0, sin confirmadaPor/condonacion.
+  // rama (c): solo registrador, devuelto==0, sin condonacion.
   // Externa editable (campo ausente OK para rama (c) con get default).
   await seed('r343', externalObl({ monto: 500, devuelto: 0 }));
   // negativo: monto a 0.5

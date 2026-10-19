@@ -70,13 +70,6 @@ export async function submitDevolucion({
     if ("condonacion" in obl) {
       throw new ReintegroError("CONDONADA", "Obligación condonada");
     }
-    // 4.6: sin entregas antes de confirmar (miembro sin confirmar).
-    if (obl.contraparteUid != null && obl.confirmadaPor == null) {
-      throw new ReintegroError(
-        "SIN_CONFIRMAR",
-        "Obligación de miembro sin confirmar por la contraparte",
-      );
-    }
     // Sobrepago rechazado también en cliente (las reglas lo rechazan igual).
     const saldo = Number(obl.monto) - Number(obl.devuelto);
     if (monto > saldo) {

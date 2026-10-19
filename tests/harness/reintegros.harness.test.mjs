@@ -8,10 +8,10 @@
 //
 // Casos de §14.1 (PROPUESTA-ETAPA-3) + ajustes aprobados del plan 4.1:
 //   1  (H1)   alta ambos sentidos, participantes + evento
-//   2  (H2)   devolución parcial miembro confirmado
+//   2  (H2)   devolución parcial miembro
 //   2b (H2b)  devolución parcial externa
 //   3  (H3)   devolución completa → liquidado
-//   3b (H3b)  rechazo SIN_CONFIRMAR sobre miembro sin confirmar
+//   3b (H3b)  devolución sobre miembro sin confirmación previa (procede)
 //   4  (H4)   sobrepago rechazado SALDO_INSUFICIENTE
 //   5a (H5a)  concurrencia: suma > saldo → una gana (invariante sin sobregiro)
 //   5b (H5b)  suma ≤ saldo → dos secuenciales ambas ganan (ver nota emulador)
@@ -123,8 +123,6 @@ function baseObl(over = {}) {
     concepto: "Alquiler octubre",
     gastoVinculadoId: null,
     createdAt: Timestamp.now(),
-    confirmadaPor: B,
-    confirmadaAt: Timestamp.now(),
     ...over,
   };
 }
@@ -218,7 +216,7 @@ after(async () => {
 test("H1 — submitReintegro: alta miembro y externa, shape exacto, evento creacion/obligacion", async () => {
   const dbA = dbAs(A);
 
-  // 1a: miembro (por_cobrar) — confirmadaPor: null presente
+  // 1a: miembro (por_cobrar) — sin confirmadaPor (17/10/2026)
   const { rid: ridMember } = await submitReintegro({
     db: dbA,
     uid: A,
@@ -243,8 +241,7 @@ test("H1 — submitReintegro: alta miembro y externa, shape exacto, evento creac
   assert.equal(oblM.movimientoInicial, "salida");
   assert.equal(oblM.concepto, "Mueble 50/50");
   assert.ok(oblM.createdAt instanceof Timestamp, "createdAt debe ser Timestamp");
-  assert.ok("confirmadaPor" in oblM, "miembro: confirmadaPor presente");
-  assert.equal(oblM.confirmadaPor, null);
+  assert.ok(!("confirmadaPor" in oblM), "miembro: sin confirmadaPor");
   assert.ok(!("condonacion" in oblM), "sin condonacion al nacer");
   assert.ok(!("eliminacion" in oblM), "sin eliminacion al nacer");
   // Evento creacion/obligacion en la misma transacción
@@ -280,9 +277,9 @@ test("H1 — submitReintegro: alta miembro y externa, shape exacto, evento creac
   assert.equal(evsE[0].entidad, "obligacion");
 });
 
-// ═══ Caso 2 — devolución parcial miembro confirmado ═══
+// ═══ Caso 2 — devolución parcial miembro ═══
 
-test("H2 — devolución parcial sobre miembro confirmado: devuelto baja, saldo > 0, estado parcial, D-7 ok", async () => {
+test("H2 — devolución parcial sobre miembro: devuelto baja, saldo > 0, estado parcial, D-7 ok", async () => {
   const rid = "h2_conf";
   await seedObl(rid, baseObl({ monto: 1000, devuelto: 0 }));
   const dbA = dbAs(A);
@@ -366,36 +363,29 @@ test("H3 — devolución completa: saldo 0, estado liquidado, D-7 ok", async () 
   assert.ok(assertDevueltoConsistente(obl, entregas));
 });
 
-// ═══ Caso 3b — rechazo SIN_CONFIRMAR sobre miembro sin confirmar ═══
+// ═══ Caso 3b — devolución sobre miembro SIN confirmación previa ═══
 
-test("H3b — miembro sin confirmar: submitDevolucion lanza SIN_CONFIRMAR, sin escritura", async () => {
+test("H3b — miembro sin confirmacion previa: la devolución procede (SIN_CONFIRMAR eliminado)", async () => {
   const rid = "h3b_sinconfirmar";
-  // Miembro pendiente de confirmación (confirmadaPor: null)
-  await seedObl(rid, baseObl({ confirmadaPor: null, monto: 1000, devuelto: 0 }));
+  // Miembro sin estado de confirmación (esquema tras el lote 17/10/2026)
+  await seedObl(rid, baseObl({ monto: 1000, devuelto: 0 }));
 
-  await assert.rejects(
-    () =>
-      submitDevolucion({
-        db: dbAs(A),
-        uid: A,
-        uidNombre: "Alice",
-        rid,
-        monto: 300,
-        realizadoPorUid: A,
-        realizadoPorNombre: "Alice",
-        fechaPago: Timestamp.now(),
-      }),
-    (err) => {
-      assert.ok(err instanceof ReintegroError, "debe ser ReintegroError");
-      assert.equal(err.code, "SIN_CONFIRMAR");
-      return true;
-    },
-  );
+  await submitDevolucion({
+    db: dbAs(A),
+    uid: A,
+    uidNombre: "Alice",
+    rid,
+    monto: 300,
+    realizadoPorUid: A,
+    realizadoPorNombre: "Alice",
+    fechaPago: Timestamp.now(),
+  });
 
   const obl = await readObl(rid, A);
-  assert.equal(obl.devuelto, 0, "sin escritura parcial");
+  assert.equal(obl.devuelto, 300, "devuelto sube exactamente el monto");
   const entregas = await readEntregas(rid, A);
-  assert.equal(entregas.length, 0, "sin entrega creada");
+  assert.equal(entregas.length, 1, "entrega creada");
+  assert.ok(assertDevueltoConsistente(obl, entregas));
 });
 
 // ═══ Caso 4 — sobrepago rechazado SALDO_INSUFICIENTE ═══
@@ -889,7 +879,7 @@ test("H13 — entradas/salidas I-8: movimientoInicial propio sí, ajeno no (cont
 //
 // Ajuste 6 (4.2): la UI puede enviar "" (estado vacío del selector) o
 // undefined; el helper debe normalizarlos a null (shape de reglas para
-// externa: sin confirmadaPor, participantes solo con el registrador). ""
+// externa: participantes solo con el registrador). ""
 // JAMÁS se persiste. Un tipo no-string es error de validación y no escribe.
 
 test("H14 — contraparteUid externa: '', null y undefined → null en Firestore", async () => {

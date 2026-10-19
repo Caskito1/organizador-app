@@ -248,11 +248,9 @@ match /fixed_expense_entries/{entryId} {
         // Sin constancias al nacer (nadie 'ya condonó/ya eliminó' un doc nuevo):
         && !('condonacion' in request.resource.data)
         && !('eliminacion' in request.resource.data)
-        // 4.6 (§2.5): null = pendiente de confirmación si hay contraparte con uid
-        && ('confirmadaPor' in request.resource.data
-            ? (request.resource.data.contraparteUid != null
-               && request.resource.data.confirmadaPor == null)
-            : request.resource.data.contraparteUid == null)
+        // 17/10/2026 — sin confirmación bilateral (4.6 eliminada): el campo
+        // confirmadaPor queda PROHIBIDO en el alta (esquema limpio).
+        && !('confirmadaPor' in request.resource.data)
         && request.resource.data.createdAt == request.time;
 
       allow delete: if false;   // Criterio 3.7: sin borrado físico, NUNCA.
@@ -290,10 +288,8 @@ match /fixed_expense_entries/{entryId} {
              )
           // (c) Editar monto de la obligación (solo registrador, D-8(ii):
           // monto bloqueado con devuelto > 0; transaccional en la app).
-          // H-c (2026-10-16): congelado también tras la confirmación
-          // bilateral — el monto es parte del acuerdo confirmado. Se usa
-          // .get() con default para no romper obligaciones EXTERNAS donde
-          // el campo no existe en el documento.
+          // 17/10/2026: sin confirmación bilateral — el monto es editable
+          // con devuelto == 0 sin estado previo (H-c moot).
           || ( esRegistrador(rid)
                && request.resource.data.diff(resource.data).affectedKeys()
                    .hasOnly(['monto'])
@@ -304,18 +300,16 @@ match /fixed_expense_entries/{entryId} {
                && request.resource.data.monto >= request.resource.data.devuelto
                && resource.data.devuelto == 0
                && request.resource.data.devuelto == 0
-               && resource.data.get('confirmadaPor', null) == null
                && resource.data.get('condonacion', null) == null
              )
           // (d) Edición de campos NO financieros — LISTA BLANCA (H-b,
           // 2026-10-16): en vez de congelar campo por campo, solo se
           // permiten EXACTAMENTE estos tres y todo lo demás queda
           // congelado por defecto (incluye sentido, movimientoInicial,
-          // monto, devuelto, constancias, confirmación y cualquier campo
-          // nuevo que se agregue al esquema). Cada uno exige tipo string
-          // como el alta. Congelado también tras la confirmación
-          // (concepto es parte del acuerdo bilateral) y solo sobre ACTIVA
-          // (condonada ⇒ solo lectura; eliminada cae en la guard global).
+          // monto, devuelto, constancias y cualquier campo nuevo que se
+          // agregue al esquema). Cada uno exige tipo string como la alta.
+          // Solo sobre ACTIVA (condonada ⇒ solo lectura; eliminada cae en
+          // la guard global).
           || ( esRegistrador(rid)
                && request.resource.data.diff(resource.data).affectedKeys()
                    .hasOnly(['concepto', 'contraparteNombre',
@@ -324,7 +318,6 @@ match /fixed_expense_entries/{entryId} {
                && request.resource.data.concepto.size() > 0
                && request.resource.data.contraparteNombre is string
                && request.resource.data.registradoPorNombre is string
-               && resource.data.get('confirmadaPor', null) == null
                && resource.data.get('condonacion', null) == null
              )
           // (e) Condonación (C1, D-8): UNA SOLA VEZ (sin condonación previa)
@@ -350,21 +343,8 @@ match /fixed_expense_entries/{entryId} {
                && request.resource.data.diff(resource.data).affectedKeys()
                    .hasOnly(['eliminacion'])
                && request.resource.data.get('eliminacion', null) != null
-               && request.resource.data.eliminacion.eliminadaPor == uid()
-             )
-          // (g) 4.6 — Confirmación (§2.5): UNA SOLA VEZ (null → uid), solo
-          // la contraparte (≠ registrador), con contraparte miembro, y SOLO
-          // cambian los dos campos de confirmación (demás congelados).
-          // `confirmadaAt` debe escribirse con serverTimestamp(): se exige
-          // igual a request.time (no se admite hora forjada por el cliente).
-          || ( resource.data.contraparteUid != null
-               && uid() != resource.data.registradoPor
-               && resource.data.get('confirmadaPor', null) == null
-               && request.resource.data.diff(resource.data).affectedKeys()
-                   .hasOnly(['confirmadaPor', 'confirmadaAt'])
-               && request.resource.data.confirmadaPor == uid()
-               && request.resource.data.confirmadaAt == request.time
-             )
+                && request.resource.data.eliminacion.eliminadaPor == uid()
+              )
         );
 
       // ─── subcolección: eventos (bitácora, D-3) ──────────────────────
@@ -381,10 +361,9 @@ match /fixed_expense_entries/{entryId} {
           && request.resource.data.registradoPor == uid()
           && request.resource.data.tipo in
                ['creacion', 'edicion', 'eliminacion', 'condonacion']
-               // 'confirmacion' NO va aquí: D-3 aprobó estos 4 tipos. La
-               // extensión se propone y se aprueba con 4.6 (§2.5) y entra
-               // con la edición de reglas de esa subetapa — sin ampliar en
-               // silencio el esquema en 4.0.
+                // 'confirmacion' queda FUERA definitivamente: D-3 aprobó
+                // solo estos 4 tipos y la confirmación bilateral fue
+                // eliminada (17/10/2026) — no hay evento que registrar.
           && request.resource.data.entidad in ['obligacion', 'entrega'];
         allow update, delete: if false;   // 3.14: create-only
       }
@@ -421,11 +400,6 @@ match /fixed_expense_entries/{entryId} {
              .get('condonacion', null) == null
         && obl(request.resource.data.reintegroId)
              .get('eliminacion', null) == null
-        // 4.6 (§2.5): sin entregas antes de confirmar — GRUPO EXPLÍCITO
-        // (hallazgo 1): la precedencia no debe partir la condición.
-        && (oblAfter(request.resource.data.reintegroId)
-              .get('confirmadaPor', null) != null
-            || obl(request.resource.data.reintegroId).contraparteUid == null)
         // ACOPLE (3.8): el acumulador debe subir exactamente el monto escrito,
         // sin exceder el monto de la obligación — un cliente malicioso no
         // puede crear una entrega desincronizada:

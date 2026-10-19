@@ -102,7 +102,8 @@ export async function submitReintegro({
   await runTransaction(db, async (tx) => {
     // Shape exacto exigido por las reglas (create de reintegros):
     // devuelto:0, gastoVinculadoId:null, createdAt==request.time,
-    // sin condonacion/eliminacion, confirmadaPor:null SOLO para miembro.
+    // sin condonacion/eliminacion y SIN confirmadaPor (17/10/2026:
+    // sin confirmación bilateral — el campo está prohibido en el alta).
     const payload = {
       registradoPor: uid,
       registradoPorNombre: uidNombre.trim(),
@@ -119,11 +120,6 @@ export async function submitReintegro({
       gastoVinculadoId: null,
       createdAt: serverTimestamp(),
     };
-    // 4.6: confirmadaPor presente (en null) solo si hay contraparte miembro;
-    // para externos el campo debe estar AUSENTE (regla de create).
-    if (cpUid) {
-      payload.confirmadaPor = null;
-    }
 
     tx.set(doc(db, "reintegros", rid), payload);
 
