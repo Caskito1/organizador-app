@@ -358,28 +358,29 @@ renumeración: era la última; la secuencia termina en **4.5**).
 obligaciones de miembro **cuentan en el balance de ambas partes** y se
 presentan como cualquier otra.
 
-**Registrado, NO ejecutado — el primer paso de la próxima sesión, ANTES de
-4.3, es el lote de reglas que retira la confirmación, con diff y tests para
-aprobación del usuario** (las reglas que se desplieguen a Producción serán
-las posteriores a ese lote):
+**Lote de reglas — APLICADO 17/10/2026** (diff y tests aprobados por el
+usuario antes de aplicar; commit de código `5264d2e`; las reglas que se
+desplieguen a Producción serán **las posteriores a este lote**):
 
 - `firestore.rules` — guarda de entregas
-  `confirmadaPor != null || contraparteUid == null` → se retira.
-- `firestore.rules` — rama (g) de confirmación → se retira (tests 3.20).
-- `firestore.rules` — condición H-c de la rama (c) → pasa a **moot** → se
-  retira (test 3.25).
-- `firestore.rules` — `create`: `confirmadaPor` exigido en el alta de miembro
-  → se retira (tests 3.9/3.40 y shape del alta).
-- `submitReintegro.js:122-125` — el alta escribe `confirmadaPor: null` → se
-  retira (harness H1 / 1a / 1b).
-- `submitDevolucion.js:73-78` — chequeo `SIN_CONFIRMAR` → se retira (harness
-  H3b).
+  `confirmadaPor != null || contraparteUid == null` → **retirada**.
+- `firestore.rules` — rama (g) de confirmación → **retirada** (test 3.20
+  reescrito: el campo queda prohibido en create y no escribible en update).
+- `firestore.rules` — condición H-c de la rama (c) → **moot, retirada**
+  (test 3.25 reescrito: monto editable con `devuelto == 0`).
+- `firestore.rules` — `create`: **`confirmadaPor` prohibido en el alta**
+  (`!('confirmadaPor' in …)`; tests 3.9/3.40 y shape H1/1a/1b actualizados).
+- `submitReintegro.js` — el alta **ya no escribe** `confirmadaPor` (harness
+  H1 / 1a / 1b).
+- `submitDevolucion.js` — chequeo `SIN_CONFIRMAR` **retirado** (harness H3b
+  reescrito: la devolución sobre miembro procede).
 - Extensión `['confirmacion']` en `eventos` → **sin objeto**; la lista D-3
   se mantiene cerrada en 4 tipos.
 
-**Efecto visible mientras tanto:** los pagos de obligaciones de **MIEMBRO**
-siguen bloqueados (reglas + helper) aunque ya no se muestre el label;
-externas sin cambios. `PROPUESTA-ETAPA-4.md` quedó anotado (§1.2/§1.6/§1.8
+**Efecto:** los pagos de obligaciones de **MIEMBRO** quedan habilitados
+para cualquiera de los dos; externas sin cambios. Gates del lote:
+harness **20/20**, reglas **44/44**, build 0, lint baseline (§4).
+`PROPUESTA-ETAPA-4.md` quedó anotado (§1.2/§1.6/§1.8
 ELIMINADA/§2.5 SUPERADO/§5 SUPERADO + nueva **§11** con todas las decisiones
 del 17/10); `HANDOFF-ETAPA-4.md` actualizó D-11a/D-11b y la secuencia (§4).
 
@@ -399,18 +400,37 @@ del 17/10); `HANDOFF-ETAPA-4.md` actualizó D-11a/D-11b y la secuencia (§4).
 
 | Decisión | Resolución |
 |---|---|
-| Quién puede registrar pagos | **Cualquiera de los dos** (efectivo tras el lote de reglas de §9.1) |
-| Quién puede editar el monto | **Solo el registrador, con `devuelto == 0`** (rama (c) vigente; la condición H-c pasa a moot en ese lote) |
+| Quién puede registrar pagos | **Cualquiera de los dos** — efectivo tras el lote de reglas aplicado el 17/10/2026 (§9.1) |
+| Quién puede editar el monto | **Solo el registrador, con `devuelto == 0`** — rama (c) vigente; la condición H-c quedó moot con el lote (§9.1) |
 | Condonar | **Como está hoy** (C1: acreedor según su vista) hasta 4.3-bis |
 | Eliminar | **Como está hoy** (E1: solo registrador) hasta 4.3-bis |
 
 ### 9.4 Commits de cierre
 
-- **Código** (lote 3 + 4.2 completo): commit sobre `staging` (nunca push a
-  `main`); excluye `public/sw.js`, `public/workbox-*.js` y `.env*`.
-- **Documentación:** `EVIDENCIA-4.2.md` (este archivo, repo de la app) +
-  `PROPUESTA-ETAPA-4.md` / `HANDOFF-ETAPA-4.md` (repo padre), commit
-  separado del de código.
-- Push a `origin/staging` (despliegue Preview de Vercel). La promoción a
-  `main` requiere aprobación explícita aparte (§6) — 4.2 sola NO se
-  promueve; además ahora falta el lote de reglas de §9.1 y 4.3.
+- **`74b9203`** — código de 4.2 (lote 3) sobre `staging`.
+- **`632dd65`** — evidencia 4.2 (repo de la app).
+- **`5264d2e`** — **lote de reglas** (firestore.rules + 2 helpers + 2
+  suites), commit propio, separado de los anteriores.
+- **Documentación de este pase:** `EVIDENCIA-4.2.md` (repo de la app) +
+  `PROPUESTA-ETAPA-4.md` / `HANDOFF-ETAPA-4.md` (repo padre, fila 10 +
+  referencia del HANDOFF marcadas como lote aplicado).
+- Excluidos siempre: `public/sw.js`, `public/workbox-*.js`, `.env*`.
+- Push a `origin/staging` (Preview) y a `origin/master` (padre). La
+  promoción a `main` requiere aprobación explícita aparte (§6) — ni 4.2 ni
+  el lote de reglas se promueven sin esa aprobación.
+
+### 9.5 Próximos pasos
+
+1. **4.3** — siguiente subetapa de la secuencia: acciones de pago y
+   edición en la UI de `/reintegros` (condonar/eliminar → 4.3-bis).
+2. **H-e** — PENDIENTE ABIERTO (§9.2): obligación impuesta a un tercero
+   sin veto ni aviso; debe resolverse antes de abrir la app al público.
+3. **Kill-switch del módulo (opcional):** solo necesario si se promueve a
+   main antes de cerrar la etapa 4 (ocultaría el botón «Reintegro» y la
+   ruta `/reintegros` hasta activarlo). Con el plan vigente de promover
+   todo junto al cierre de la etapa, no hace falta.
+   `NEXT_PUBLIC_USE_EMULATOR` no requiere acción: vive en
+   `.env.development.local` y está anulado fuera de `next dev`.
+4. **Detalles de estilo de `/reintegros` y del modal detectados por el
+   usuario en la prueba del 17/10/2026.** Pendientes: el usuario los
+   detalla y los hace en otra sesión (aún sin listar).
