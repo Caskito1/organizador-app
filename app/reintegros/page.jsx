@@ -1,35 +1,31 @@
 // reintegros/page.jsx
-// 4.2 (ajustes 17/10/2026): balance de stock (Préstamos / Deudas) con la
-// estética de /gastos, pestañas Activos / Saldados con acordeones, y sección
-// «Dinero del mes» (solo lectura, con selector de mes). TODO leído: sin
-// acciones — pagar/editar son 4.3 y condonar/eliminar 4.3-bis. Sin
-// confirmación bilateral (decisión 17/10/2026, 4.6 eliminada): las
-// obligaciones de miembro cuentan en el balance de ambas partes, sin
-// etiqueta. El stock de abiertas NO depende del mes (PO-1).
+// 4.3a — Reescritura consumiendo sections/ + acciones de pago (4.3):
+// el modal de pago (DevolucionModal) se abre desde FilaReintegro
+// («Agregar pago» / «Saldar deuda») en la pestaña Activos.
+// Se conserva de 4.2: balance de stock Préstamos/Deudas (estética
+// /gastos), pestañas Activos/Saldados, sección «Dinero del mes» (solo
+// lectura con selector de mes), botón «Reintentar» y el reintento de la
+// suscripción (solo unavailable, con tope). Sin confirmación bilateral
+// (decisión 17/10/2026): las obligaciones de miembro cuentan en el
+// balance de ambas partes. El stock de abiertas NO depende del mes (PO-1).
 
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 
 import { useAuth } from "@/lib/AuthContext";
 import IconButton from "@/app/components/ui/IconButton";
 import IconCalendar from "@/app/components/icons/IconCalendar";
 
 import Appshell from "../components/layout/Appshell";
-import BackBtn from "../components/ui/BackBtn";
-import Acordeon from "../gastos/components/Acordeon";
 import MonthSelectorModal from "../gastos/components/MonthNavigator";
 
 import useReintegros from "./hooks/useReintegros";
-import { sentidoDelViewer, saldoDe, estadoDe } from "./helpers/modelo";
-
-const ETIQUETA_ESTADO = {
-  pendiente: "Pendiente",
-  parcial: "Parcial",
-  liquidado: "Liquidada",
-  condonado: "Condonada",
-};
+import { sentidoDelViewer, saldoDe } from "./helpers/modelo";
+import ReintegrosHeader from "./sections/ReintegrosHeader";
+import PendientesSection from "./sections/PendientesSection";
+import CerradosSection from "./sections/CerradosSection";
+import DevolucionModal from "./components/DevolucionModal";
 
 function getMesLabel(date) {
   return date.toLocaleString("es-AR", { month: "long", year: "numeric" });
@@ -45,40 +41,6 @@ function resumenDe(lista) {
     montoTotal: lista.reduce((a, r) => a + Number(r.monto || 0), 0),
     pendiente: lista.reduce((a, r) => a + saldoDe(r), 0),
   };
-}
-
-function FilaObl({ r, uid }) {
-  const estado = estadoDe(r);
-  const saldo = saldoDe(r);
-  const devuelto = Number(r.devuelto || 0);
-  const monto = Number(r.monto || 0);
-  const fecha = (r.createdAt?.toDate?.() ?? new Date(r.createdAt))
-    .toLocaleDateString("es-AR");
-
-  return (
-    <div className="flex justify-between border-b border-[rgba(138,100,255,0.1)] py-[10px]">
-      <div className="min-w-0 flex-1">
-        <p className="text-[14px] font-medium capitalize text-text">
-          {r.concepto}
-        </p>
-        <p className="mt-[2px] text-[11px] text-text-muted">
-          {r.contraparteNombre} · {fecha}
-        </p>
-        <p className="mt-[2px] text-[11px] text-text-muted">
-          Saldado {money(devuelto)} · Pendiente {money(saldo)}
-        </p>
-      </div>
-
-      <div className="flex-shrink-0 text-right">
-        <p className="font-sora text-[14px] font-bold text-text">
-          {money(monto)}
-        </p>
-        <p className="mt-[2px] text-[11px] text-text-muted">
-          {ETIQUETA_ESTADO[estado]}
-        </p>
-      </div>
-    </div>
-  );
 }
 
 function ColumnaBalance({ titulo, resumen, etiquetaPendiente }) {
@@ -101,7 +63,6 @@ function ColumnaBalance({ titulo, resumen, etiquetaPendiente }) {
 }
 
 export default function ReintegrosPage() {
-  const router = useRouter();
   const { user } = useAuth();
   const uid = user?.uid ?? null;
 
@@ -111,6 +72,8 @@ export default function ReintegrosPage() {
   const [openPrestamos, setOpenPrestamos] = useState(true);
   const [openDeudas, setOpenDeudas] = useState(true);
   const [openMes, setOpenMes] = useState(false);
+  // Modal de pago: { r, modo } — modo «parcial» | «saldar» (§9.4).
+  const [pago, setPago] = useState(null);
 
   const {
     loading,
@@ -119,6 +82,7 @@ export default function ReintegrosPage() {
     reintentar,
     pendientes,
     cerrados,
+    devoluciones,
     entradasReintegros,
     salidasReintegros,
   } = useReintegros(mesSel);
@@ -138,29 +102,25 @@ export default function ReintegrosPage() {
     (r) => sentidoDelViewer(r, uid) === "por_devolver",
   );
 
+  // Entregas agrupadas por obligación para las filas (sin eliminadas —
+  // D-5: el filtro por campo ausente ya es el del modelo; acá se aplica
+  // de forma defensiva sobre la constancia).
+  const entregasPorObl = useMemo(() => {
+    const mapa = new Map();
+    for (const d of devoluciones) {
+      if ("eliminacion" in d) continue;
+      const arr = mapa.get(d.reintegroId) ?? [];
+      arr.push(d);
+      mapa.set(d.reintegroId, arr);
+    }
+    return mapa;
+  }, [devoluciones]);
+
   const enActivos = tab === "activos";
-  const listaPrestamos = enActivos ? prestamosAbiertas : prestamosCerrados;
-  const listaDeudas = enActivos ? deudasAbiertas : deudasCerradas;
-  // Acordeón: en Activos el total es el saldo pendiente; en Saldados el monto.
-  const totalPrestamos = enActivos
-    ? resumenDe(prestamosAbiertas).pendiente
-    : resumenDe(prestamosCerrados).montoTotal;
-  const totalDeudas = enActivos
-    ? resumenDe(deudasAbiertas).pendiente
-    : resumenDe(deudasCerradas).montoTotal;
 
   return (
     <Appshell>
-      {/* Header estilo /gastos (sin selector de mes: el mes solo aplica a
-          «Dinero del mes», §5) */}
-      <div className="flex items-center justify-between pb-2 pt-14">
-        <div className="flex items-center gap-3">
-          <BackBtn onClick={() => router.back()} />
-          <h1 className="font-display text-[20px] font-bold capitalize tracking-[-0.4px] text-text">
-            Reintegros
-          </h1>
-        </div>
-      </div>
+      <ReintegrosHeader />
 
       {loading && (
         <p className="text-[13px] text-text-muted">Cargando reintegros…</p>
@@ -231,56 +191,29 @@ export default function ReintegrosPage() {
             })}
           </div>
 
-          {/* (4) Acordeones Préstamos / Deudas — estilo /gastos */}
-          <div className="flex flex-col gap-3">
-            <Acordeon
-              titulo="Préstamos"
-              total={totalPrestamos}
-              subtitle={`${listaPrestamos.length} ${
-                listaPrestamos.length === 1
-                  ? "obligación"
-                  : "obligaciones"
-              }`}
-              open={openPrestamos}
-              onToggle={() => setOpenPrestamos((v) => !v)}
-            >
-              {listaPrestamos.length === 0 ? (
-                <p className="mt-3 text-[12px] text-text-muted">
-                  {enActivos
-                    ? "Sin préstamos abiertos."
-                    : "Sin préstamos saldados."}
-                </p>
-              ) : (
-                listaPrestamos.map((r) => (
-                  <FilaObl key={r.id} r={r} uid={uid} />
-                ))
-              )}
-            </Acordeon>
-
-            <Acordeon
-              titulo="Deudas"
-              total={totalDeudas}
-              subtitle={`${listaDeudas.length} ${
-                listaDeudas.length === 1
-                  ? "obligación"
-                  : "obligaciones"
-              }`}
-              open={openDeudas}
-              onToggle={() => setOpenDeudas((v) => !v)}
-            >
-              {listaDeudas.length === 0 ? (
-                <p className="mt-3 text-[12px] text-text-muted">
-                  {enActivos
-                    ? "Sin deudas abiertas."
-                    : "Sin deudas saldadas."}
-                </p>
-              ) : (
-                listaDeudas.map((r) => (
-                  <FilaObl key={r.id} r={r} uid={uid} />
-                ))
-              )}
-            </Acordeon>
-          </div>
+          {/* Secciones según pestaña (4.3a) */}
+          {enActivos ? (
+            <PendientesSection
+              prestamos={prestamosAbiertas}
+              deudas={deudasAbiertas}
+              entregasPorObl={entregasPorObl}
+              openPrestamos={openPrestamos}
+              onTogglePrestamos={() => setOpenPrestamos((v) => !v)}
+              openDeudas={openDeudas}
+              onToggleDeudas={() => setOpenDeudas((v) => !v)}
+              onPagar={(r, modo) => setPago({ r, modo })}
+            />
+          ) : (
+            <CerradosSection
+              prestamos={prestamosCerrados}
+              deudas={deudasCerradas}
+              entregasPorObl={entregasPorObl}
+              openPrestamos={openPrestamos}
+              onTogglePrestamos={() => setOpenPrestamos((v) => !v)}
+              openDeudas={openDeudas}
+              onToggleDeudas={() => setOpenDeudas((v) => !v)}
+            />
+          )}
 
           {/* (5) Dinero del mes — solo lectura, con selector de mes */}
           <div className="mt-4 overflow-hidden rounded-[20px] border border-border bg-[rgba(138,100,255,0.07)] backdrop-blur-[16px]">
@@ -367,6 +300,15 @@ export default function ReintegrosPage() {
         onClose={() => setCalendarOpen(false)}
         onSelect={setMesSel}
       />
+
+      {/* Modal de pago (4.3a) — se monta solo al abrir */}
+      {pago && (
+        <DevolucionModal
+          r={pago.r}
+          modo={pago.modo}
+          onClose={() => setPago(null)}
+        />
+      )}
     </Appshell>
   );
 }

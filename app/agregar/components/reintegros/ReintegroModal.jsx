@@ -16,6 +16,8 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthContext";
 
+import { MODAL_SHEET_CLASSES } from "@/app/components/ui/modalSheet";
+
 import { useReintegroModal } from "./hooks/useReintegroModal";
 import { submitReintegro } from "./helpers/submitReintegro";
 import { ReintegroError } from "./helpers/submitDevolucion";
@@ -189,7 +191,7 @@ export default function ReintegroModal({ onClose }) {
       onClick={intentarCerrar}
     >
       <div
-        className="max-h-[88vh] w-full max-w-[430px] overflow-y-auto rounded-t-[28px] border-t border-border bg-[rgba(18,14,28,0.97)] px-5 pb-8 pt-5"
+        className={MODAL_SHEET_CLASSES}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mx-auto mb-4 h-[4px] w-[40px] rounded-full bg-[rgba(255,255,255,0.15)]" />

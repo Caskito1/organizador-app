@@ -2,6 +2,7 @@ import IconMoney from "@/app/components/icons/IconMoney";
 import IconShopping from "@/app/components/icons/IconShopping";
 import IconCalendar from "@/app/components/icons/IconCalendar";
 import IconStats from "@/app/components/icons/IconStats";
+import IconPersonal from "@/app/components/icons/IconPersonal";
 
 const quickActions = [
   
@@ -35,6 +36,17 @@ const quickActions = [
   colorBorder: "rgba(138,100,255,0.22)",
   disabled: false,
 },
+
+  {
+    icon: IconPersonal,
+    label: "Ver reintegros",
+    sub: "Préstamos y deudas",
+    path: "/reintegros",
+    color: "var(--accent)",
+    colorBg: "rgba(138,100,255,0.1)",
+    colorBorder: "rgba(138,100,255,0.22)",
+    disabled: false,
+  },
 
   {
     icon: IconShopping,
