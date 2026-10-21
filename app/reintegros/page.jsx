@@ -8,6 +8,10 @@
 // suscripción (solo unavailable, con tope). Sin confirmación bilateral
 // (decisión 17/10/2026): las obligaciones de miembro cuentan en el
 // balance de ambas partes. El stock de abiertas NO depende del mes (PO-1).
+// 4.3b (21/10/2026): edición de monto SOLO en Activos — useEdiciones
+// suscribe los eventos `edicion` de las obligaciones visibles (0 rids en
+// Saldados ⇒ desuscribe todo) y EditarReintegroModal edita pago u
+// obligación. CerradosSection no recibe nada de edición.
 
 "use client";
 
@@ -21,11 +25,13 @@ import Appshell from "../components/layout/Appshell";
 import MonthSelectorModal from "../gastos/components/MonthNavigator";
 
 import useReintegros from "./hooks/useReintegros";
+import useEdiciones from "./hooks/useEdiciones";
 import { sentidoDelViewer, saldoDe } from "./helpers/modelo";
 import ReintegrosHeader from "./sections/ReintegrosHeader";
 import PendientesSection from "./sections/PendientesSection";
 import CerradosSection from "./sections/CerradosSection";
 import DevolucionModal from "./components/DevolucionModal";
+import EditarReintegroModal from "./components/EditarReintegroModal";
 
 function getMesLabel(date) {
   return date.toLocaleString("es-AR", { month: "long", year: "numeric" });
@@ -74,6 +80,8 @@ export default function ReintegrosPage() {
   const [openMes, setOpenMes] = useState(false);
   // Modal de pago: { r, modo } — modo «parcial» | «saldar» (§9.4).
   const [pago, setPago] = useState(null);
+  // Modal de edición de monto (4.3b): { modo, r, entrega? }.
+  const [edicion, setEdicion] = useState(null);
 
   const {
     loading,
@@ -117,6 +125,16 @@ export default function ReintegrosPage() {
   }, [devoluciones]);
 
   const enActivos = tab === "activos";
+
+  // 4.3b — Eventos `edicion` SOLO de las obligaciones visibles en Activos:
+  // en Saldados rids vacíos ⇒ la suscripción se desuscribe toda y los chips
+  // desaparecen (decisión 21/10/2026; ver EVIDENCIA-4.3.md §3.2). Si una
+  // obligación se liquida, sale de `pendientes` ⇒ deja de suscribirse.
+  const idsActivas = useMemo(
+    () => (enActivos ? pendientes.map((r) => r.id) : []),
+    [enActivos, pendientes],
+  );
+  const ediciones = useEdiciones(idsActivas);
 
   return (
     <Appshell>
@@ -202,6 +220,11 @@ export default function ReintegrosPage() {
               openDeudas={openDeudas}
               onToggleDeudas={() => setOpenDeudas((v) => !v)}
               onPagar={(r, modo) => setPago({ r, modo })}
+              ediciones={ediciones}
+              onEditarObligacion={(r) => setEdicion({ modo: "obligacion", r })}
+              onEditarEntrega={(r, entrega) =>
+                setEdicion({ modo: "pago", r, entrega })
+              }
             />
           ) : (
             <CerradosSection
@@ -307,6 +330,16 @@ export default function ReintegrosPage() {
           r={pago.r}
           modo={pago.modo}
           onClose={() => setPago(null)}
+        />
+      )}
+
+      {/* Modal de edición de monto (4.3b) — se monta solo al abrir */}
+      {edicion && (
+        <EditarReintegroModal
+          modo={edicion.modo}
+          r={edicion.r}
+          entrega={edicion.entrega}
+          onClose={() => setEdicion(null)}
         />
       )}
     </Appshell>

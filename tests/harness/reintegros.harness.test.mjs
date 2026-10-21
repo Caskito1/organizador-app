@@ -1,6 +1,7 @@
 // tests/harness/reintegros.harness.test.mjs
 // Harness del módulo Reintegros (4.1) contra el emulador demo-finanzas.
-// Prueba los helpers REALES (submitReintegro/submitDevolucion) y la
+// Prueba los helpers REALES (submitReintegro/submitDevolucion y la
+// edición de monto de 4.3b: editarEntrega/editarObligacion) y la
 // suscripción (subscribeReintegros) + funciones puras del modelo.
 //
 // Ningún archivo importado por este harness carga la config real de
@@ -29,6 +30,19 @@
 //   +  (HS2)  batching TANDA: 12 obls → 12 entregas traídas
 //   +  (HS3)  cleanup: unsubscribe sin errores
 //   +  (HS4)  cleanup tras emitir R1' con datos: sin errores ni emisiones
+//   +  (H15)  editar entrega (baja): delta exacto, evento edicion/entrega
+//   +  (H15b) contraparte edita entrega (ambas partes)
+//   +  (H16)  subir pago hasta agotar saldo → liquidado (migra a Saldados)
+//   +  (H16b) subir de más → SALDO_INSUFICIENTE, sin escritura
+//   +  (H17)  guardas cliente: LIQUIDADA/CONDONADA/ELIMINADA (sin escritura)
+//   +  (H18)  editar obligación (devuelto == 0): positiva + evento
+//   +  (H18b) no registrador → NO_REGISTRADOR
+//   +  (H19)  devuelto > 0 → MONTO_BLOQUEADO
+//   +  (H20)  monto sin cambios → MONTO_SIN_CAMBIOS, sin evento
+//   +  (H21)  concurrencia edición + pago: exactamente uno gana, sin sobregiro
+// H15–H21: edición de monto (4.3b, 21/10/2026). NOTA: en H17, LIQUIDADA es
+// ÚNICAMENTE guardia de cliente — las reglas no la bloquean (ver
+// EVIDENCIA-4.3.md).
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -62,6 +76,8 @@ import {
   submitDevolucion,
   ReintegroError,
 } from "../../app/agregar/components/reintegros/helpers/submitDevolucion.js";
+import { editarEntrega } from "../../app/agregar/components/reintegros/helpers/editarEntrega.js";
+import { editarObligacion } from "../../app/agregar/components/reintegros/helpers/editarObligacion.js";
 import {
   sentidoDelViewer,
   saldoDe,
@@ -86,6 +102,7 @@ const SUB1 = "uid_sub_1";
 const SUB2 = "uid_sub_2";
 const SUB3 = "uid_sub_3";
 const SUB4 = "uid_sub_4";
+const SUB5 = "uid_sub_5";
 
 let testEnv;
 
@@ -1084,4 +1101,390 @@ test("HS4 — cleanup tras emitir R1' con datos: sin errores ni emisiones tras u
     afterUnsub,
     "sin emisiones nuevas tras unsub con datos",
   );
+});
+
+// ═══ 4.3b — Edición de monto (H15–H21) ═══
+
+function baseEntrega(rid, over = {}) {
+  return {
+    reintegroId: rid,
+    monto: 300,
+    realizadoPorUid: A,
+    realizadoPorNombre: "Alice",
+    registradoPor: A,
+    registradoPorNombre: "Alice",
+    fechaPago: Timestamp.now(),
+    detalle: null,
+    ...over,
+  };
+}
+
+async function readEdicionEventos(rid, asUid = A) {
+  const snap = await getDocs(
+    query(
+      collection(dbAs(asUid), "reintegros", rid, "eventos"),
+      where("tipo", "==", "edicion"),
+    ),
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+// ═══ Caso 15 — editar entrega (baja): delta exacto + evento completo ═══
+
+test("H15 — editar entrega (baja): delta exacto, evento completo edicion/entrega, lectura como contraparte", async () => {
+  const rid = "h15_edit";
+  const did = "h15_edit_e1";
+  await seedObl(rid, baseObl({ monto: 1000, devuelto: 300 }));
+  await seedEntrega(did, baseEntrega(rid, { monto: 300 }));
+
+  await editarEntrega({ db: dbAs(A), uid: A, did, monto: 200 });
+
+  const obl = await readObl(rid, A);
+  assert.equal(obl.devuelto, 200, "delta exacto: 300 - 300 + 200");
+  const entregas = await readEntregas(rid, A);
+  assert.equal(entregas.length, 1);
+  const e = entregas[0];
+  assert.equal(e.monto, 200);
+  assert.equal(e.reintegroId, rid);
+  assert.equal(e.realizadoPorNombre, "Alice", "demás campos intactos");
+  assert.equal(e.registradoPor, A);
+  assert.ok(e.fechaPago instanceof Timestamp, "fechaPago intacta");
+  assert.ok(assertDevueltoConsistente(obl, entregas), "D-7 ok");
+
+  // Evento con registradoPor, entidad, entregaId y createdAt de servidor,
+  // leído con el filtro where("tipo","==","edicion") como la otra parte.
+  const evs = await readEdicionEventos(rid, B);
+  assert.equal(evs.length, 1, "un evento edicion");
+  const ev = evs[0];
+  assert.equal(ev.tipo, "edicion");
+  assert.equal(ev.entidad, "entrega");
+  assert.equal(ev.entregaId, did);
+  assert.equal(ev.montoAnterior, 300);
+  assert.equal(ev.montoNuevo, 200);
+  assert.equal(ev.registradoPor, A);
+  assert.ok(ev.createdAt instanceof Timestamp, "createdAt de servidor");
+});
+
+// ═══ Caso 15b — contraparte edita entrega (ambas partes) ═══
+
+test("H15b — contraparte edita la entrega: permitido (ambas partes); evento registradoPor == B", async () => {
+  const rid = "h15b_edit";
+  const did = "h15b_edit_e1";
+  await seedObl(rid, baseObl({ monto: 1000, devuelto: 300 }));
+  await seedEntrega(did, baseEntrega(rid, { monto: 300 }));
+
+  await editarEntrega({ db: dbAs(B), uid: B, did, monto: 400 });
+
+  const obl = await readObl(rid, B);
+  assert.equal(obl.devuelto, 400, "delta exacto: 300 - 300 + 400");
+  const entregas = await readEntregas(rid, B);
+  assert.equal(entregas[0].monto, 400);
+  assert.ok(assertDevueltoConsistente(obl, entregas), "D-7 ok");
+
+  const evs = await readEdicionEventos(rid, A);
+  assert.equal(evs.length, 1);
+  assert.equal(evs[0].registradoPor, B, "evento atribuido a la contraparte");
+  assert.equal(evs[0].montoAnterior, 300);
+  assert.equal(evs[0].montoNuevo, 400);
+});
+
+// ═══ Caso 16 — subir hasta agotar saldo → liquidado ═══
+
+test("H16 — subir pago hasta agotar saldo: liquidado (migra a Saldados), D-7 ok", async () => {
+  const rid = "h16_liq";
+  const did = "h16_liq_e1";
+  await seedObl(rid, baseObl({ monto: 500, devuelto: 300 }));
+  await seedEntrega(did, baseEntrega(rid, { monto: 300 }));
+
+  await editarEntrega({ db: dbAs(A), uid: A, did, monto: 500 });
+
+  const obl = await readObl(rid, A);
+  assert.equal(obl.devuelto, 500);
+  assert.equal(saldoDe(obl), 0);
+  assert.equal(estadoDe(obl), "liquidado", "migra a la pestaña Saldados");
+  const entregas = await readEntregas(rid, A);
+  assert.equal(entregas[0].monto, 500);
+  assert.ok(assertDevueltoConsistente(obl, entregas), "D-7 ok");
+});
+
+// ═══ Caso 16b — subir de más → SALDO_INSUFICIENTE sin escritura ═══
+
+test("H16b — subir de más (resultado > monto): SALDO_INSUFICIENTE sin escritura", async () => {
+  const rid = "h16b_over";
+  const did = "h16b_over_e1";
+  await seedObl(rid, baseObl({ monto: 500, devuelto: 300 }));
+  await seedEntrega(did, baseEntrega(rid, { monto: 200 }));
+  await seedEntrega("h16b_over_e2", baseEntrega(rid, { monto: 100 }));
+
+  // Resultante = 300 - 200 + 401 = 501 > 500 → rechazado (PO-7/DC-2).
+  await assert.rejects(
+    () => editarEntrega({ db: dbAs(A), uid: A, did, monto: 401 }),
+    (err) => {
+      assert.ok(err instanceof ReintegroError);
+      assert.equal(err.code, "SALDO_INSUFICIENTE");
+      return true;
+    },
+  );
+
+  const obl = await readObl(rid, A);
+  assert.equal(obl.devuelto, 300, "devuelto intacto");
+  const entregas = await readEntregas(rid, A);
+  const e1 = entregas.find((d) => d.id === did);
+  assert.equal(e1.monto, 200, "monto intacto");
+  const evs = await readEdicionEventos(rid, A);
+  assert.equal(evs.length, 0, "sin evento edicion");
+});
+
+// ═══ Caso 17 — guardas de cliente sobre liquidada/condonada/eliminada ═══
+//
+// NOTA (documentada en EVIDENCIA-4.3.md): las reglas NO bloquean editar una
+// obligación LIQUIDADA (saldo 0) — la única barrera es esta guarda de
+// cliente; condonada y eliminada también las bloquean las reglas.
+
+test("H17 — guardas de cliente: LIQUIDADA/CONDONADA/ELIMINADA sin escritura (LIQUIDADA es única barrera)", async () => {
+  // (a) liquidada: saldo 0 → única barrera: guarda de cliente
+  const ridL = "h17_liq";
+  await seedObl(ridL, baseObl({ monto: 500, devuelto: 500 }));
+  await seedEntrega("h17_liq_e1", baseEntrega(ridL, { monto: 500 }));
+  await assert.rejects(
+    () => editarEntrega({ db: dbAs(A), uid: A, did: "h17_liq_e1", monto: 400 }),
+    (err) => {
+      assert.ok(err instanceof ReintegroError);
+      assert.equal(err.code, "LIQUIDADA");
+      return true;
+    },
+  );
+  assert.equal((await readObl(ridL, A)).devuelto, 500, "sin escritura");
+  assert.equal((await readEdicionEventos(ridL, A)).length, 0);
+
+  // (b) condonada
+  const ridC = "h17_cond";
+  await seedObl(
+    ridC,
+    baseObl({
+      monto: 500,
+      devuelto: 100,
+      condonacion: { condonadaPor: A, condonadaAt: Timestamp.now() },
+    }),
+  );
+  await seedEntrega("h17_cond_e1", baseEntrega(ridC, { monto: 100 }));
+  await assert.rejects(
+    () =>
+      editarEntrega({ db: dbAs(A), uid: A, did: "h17_cond_e1", monto: 200 }),
+    (err) => {
+      assert.equal(err.code, "CONDONADA");
+      return true;
+    },
+  );
+  assert.equal((await readEntregas(ridC, A))[0].monto, 100, "sin escritura");
+
+  // (c) eliminada (obligación)
+  const ridE = "h17_elim";
+  await seedObl(
+    ridE,
+    baseObl({
+      monto: 500,
+      devuelto: 100,
+      eliminacion: { eliminadaPor: A, eliminadaAt: Timestamp.now() },
+    }),
+  );
+  await seedEntrega("h17_elim_e1", baseEntrega(ridE, { monto: 100 }));
+  await assert.rejects(
+    () =>
+      editarEntrega({ db: dbAs(A), uid: A, did: "h17_elim_e1", monto: 200 }),
+    (err) => {
+      assert.equal(err.code, "ELIMINADA");
+      return true;
+    },
+  );
+  assert.equal((await readObl(ridE, A)).devuelto, 100, "sin escritura");
+
+  // (d) entrega eliminada
+  const ridD = "h17_deliv";
+  await seedObl(ridD, baseObl({ monto: 500, devuelto: 200 }));
+  await seedEntrega(
+    "h17_deliv_e1",
+    baseEntrega(ridD, {
+      monto: 200,
+      eliminacion: { eliminadaPor: A, eliminadaAt: Timestamp.now() },
+    }),
+  );
+  await assert.rejects(
+    () =>
+      editarEntrega({ db: dbAs(A), uid: A, did: "h17_deliv_e1", monto: 300 }),
+    (err) => {
+      assert.equal(err.code, "ELIMINADA");
+      return true;
+    },
+  );
+  assert.equal((await readObl(ridD, A)).devuelto, 200, "sin escritura");
+});
+
+// ═══ Caso 18 — editar obligación (devuelto == 0): positiva + evento ═══
+
+test("H18 — editar obligación con devuelto == 0: monto nuevo, evento edicion/obligacion", async () => {
+  const rid = "h18_edit";
+  await seedObl(rid, baseObl({ monto: 500, devuelto: 0 }));
+
+  await editarObligacion({ db: dbAs(A), uid: A, rid, monto: 700 });
+
+  const obl = await readObl(rid, A);
+  assert.equal(obl.monto, 700);
+  assert.equal(obl.devuelto, 0, "devuelto intacto");
+  const evs = await readEdicionEventos(rid, B);
+  assert.equal(evs.length, 1);
+  assert.equal(evs[0].entidad, "obligacion");
+  assert.equal(evs[0].montoAnterior, 500);
+  assert.equal(evs[0].montoNuevo, 700);
+  assert.equal(evs[0].registradoPor, A);
+  assert.ok(evs[0].createdAt instanceof Timestamp, "createdAt de servidor");
+});
+
+// ═══ Caso 18b — no registrador → NO_REGISTRADOR ═══
+
+test("H18b — editar obligación sin ser registrador: NO_REGISTRADOR sin escritura", async () => {
+  const rid = "h18b_noreg";
+  await seedObl(rid, baseObl({ monto: 500, devuelto: 0 }));
+
+  await assert.rejects(
+    () => editarObligacion({ db: dbAs(B), uid: B, rid, monto: 700 }),
+    (err) => {
+      assert.ok(err instanceof ReintegroError);
+      assert.equal(err.code, "NO_REGISTRADOR");
+      return true;
+    },
+  );
+  assert.equal((await readObl(rid, B)).monto, 500, "monto intacto");
+  assert.equal((await readEdicionEventos(rid, B)).length, 0, "sin evento");
+});
+
+// ═══ Caso 19 — devuelto > 0 → MONTO_BLOQUEADO ═══
+
+test("H19 — editar obligación con devuelto > 0: MONTO_BLOQUEADO sin escritura", async () => {
+  const rid = "h19_block";
+  await seedObl(rid, baseObl({ monto: 500, devuelto: 200 }));
+  await seedEntrega("h19_block_e1", baseEntrega(rid, { monto: 200 }));
+
+  await assert.rejects(
+    () => editarObligacion({ db: dbAs(A), uid: A, rid, monto: 600 }),
+    (err) => {
+      assert.ok(err instanceof ReintegroError);
+      assert.equal(err.code, "MONTO_BLOQUEADO");
+      return true;
+    },
+  );
+  assert.equal((await readObl(rid, A)).monto, 500, "monto intacto");
+  assert.equal((await readEdicionEventos(rid, A)).length, 0, "sin evento");
+});
+
+// ═══ Caso 20 — monto sin cambios: sin escritura ni evento ═══
+
+test("H20 — monto sin cambios (entrega y obligación): MONTO_SIN_CAMBIOS, sin evento", async () => {
+  const rid = "h20_same";
+  await seedObl(rid, baseObl({ monto: 500, devuelto: 200 }));
+  await seedEntrega("h20_same_e1", baseEntrega(rid, { monto: 200 }));
+
+  await assert.rejects(
+    () =>
+      editarEntrega({ db: dbAs(A), uid: A, did: "h20_same_e1", monto: 200 }),
+    (err) => {
+      assert.equal(err.code, "MONTO_SIN_CAMBIOS");
+      return true;
+    },
+  );
+
+  const rid2 = "h20_same_obl";
+  await seedObl(rid2, baseObl({ monto: 500, devuelto: 0 }));
+  await assert.rejects(
+    () => editarObligacion({ db: dbAs(A), uid: A, rid: rid2, monto: 500 }),
+    (err) => {
+      assert.equal(err.code, "MONTO_SIN_CAMBIOS");
+      return true;
+    },
+  );
+
+  assert.equal((await readObl(rid, A)).devuelto, 200, "devuelto intacto");
+  assert.equal((await readObl(rid2, A)).monto, 500, "monto intacto");
+  assert.equal((await readEdicionEventos(rid, A)).length, 0, "sin evento");
+  assert.equal((await readEdicionEventos(rid2, A)).length, 0, "sin evento");
+});
+
+// ═══ Caso 21 — concurrencia edición + pago: exactamente uno gana ═══
+
+test("H21 — concurrencia edición + pago nuevo: exactamente uno gana, sin sobregiro, D-7 ok", async () => {
+  const rid = "h21_conc";
+  const did = "h21_conc_e1";
+  await seedObl(rid, baseObl({ monto: 1000, devuelto: 300 }));
+  await seedEntrega(did, baseEntrega(rid, { monto: 300 }));
+  const dbA = dbAs(A);
+
+  // Ambas dejarían devuelto == 1000 (tope): serializadas, la segunda
+  // debe fallar por saldo resultante.
+  const edit = () => editarEntrega({ db: dbA, uid: A, did, monto: 1000 });
+  const pago = () =>
+    submitDevolucion({
+      db: dbA,
+      uid: A,
+      uidNombre: "Alice",
+      rid,
+      monto: 700,
+      realizadoPorUid: A,
+      realizadoPorNombre: "Alice",
+      fechaPago: Timestamp.now(),
+    });
+
+  const results = await Promise.allSettled([edit(), pago()]);
+  const fulfilled = results.filter((r) => r.status === "fulfilled");
+  const rejected = results.filter((r) => r.status === "rejected");
+  assert.equal(fulfilled.length, 1, "exactamente una debe ganar");
+  assert.equal(rejected.length, 1, "exactamente una debe fallar");
+  const code = rejected[0].reason?.code;
+  assert.ok(
+    code === "SALDO_INSUFICIENTE" || code === "permission-denied",
+    `error del perdedor inesperado: ${code}`,
+  );
+
+  const obl = await readObl(rid, A);
+  assert.equal(obl.devuelto, 1000, "sin sobregiro: devuelto <= monto");
+  assert.equal(saldoDe(obl), 0);
+  assert.equal(estadoDe(obl), "liquidado");
+  const entregas = await readEntregas(rid, A);
+  assert.ok(assertDevueltoConsistente(obl, entregas), "D-7 ok");
+});
+
+// ═══ HS5 — re-emisión de R1' al editar el monto (rids sin cambio) ═══
+//
+// REGRESIÓN del bug latente de 4.1 destapado el 21/10/2026 al validar 4.3b:
+// el guard de rids de subscribeReintegros hacía `return` SIN emitir, de modo
+// que editar el monto general (escribe SOLO `reintegros`, no toca D1)
+// nunca llegaba a la UI (fila/balance/header con el valor viejo). Sin el
+// fix, este test queda en timeout.
+
+test("HS5 — editar el monto general re-emite la suscripción: la UI ve el monto nuevo", async () => {
+  const rid = "hs5_rid";
+  await seedObl(rid, baseObl({
+    registradoPor: SUB5,
+    contraparteUid: null,
+    participantes: [SUB5],
+    monto: 200,
+    devuelto: 0,
+  }));
+  const collector = createCollector(dbAs(SUB5), SUB5);
+  const inicial = await collector.waitFor((d) => d.obligaciones.length === 1);
+  assert.equal(inicial.obligaciones[0].monto, 200, "monto inicial visible");
+
+  await editarObligacion({ db: dbAs(SUB5), uid: SUB5, rid, monto: 2000 });
+
+  const tras = await collector.waitFor(
+    (d) => d.obligaciones[0]?.monto === 2000,
+  );
+  assert.equal(tras.obligaciones[0].monto, 2000, "monto nuevo en emisión");
+  // D1 intacta (sin cambio del conjunto de rids): devoluciones sigue en []
+  // y la emisión trae ambas listas.
+  assert.ok(Array.isArray(tras.devoluciones));
+  assert.equal(tras.devoluciones.length, 0, "D1 sin reiniciarse");
+
+  collector.unsub();
+  await sleep(100);
+  assert.equal(collector.error, null, "sin errores de suscripción");
 });

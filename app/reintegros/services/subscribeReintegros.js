@@ -41,15 +41,23 @@ export function subscribeReintegros({ db, uid, onData, onError }) {
     }));
   }
 
-  function resubscribeDevoluciones(rids) {
+  function resubscribeDevoluciones(rids, snap) {
     if (destroyed) return;
 
     // Solo resuscribir si el CONJUNTO de rids cambió. R1' re-emite ante
-    // cambios en docs que no alteran la lista de ids (p. ej. editar
-    // concepto): sin este guard, cada re-emisión desuscribe y resuscribe
-    // D1, reseteando devoluciones a [] y forzando un ciclo de carga nuevo.
+    // cambios en docs que no alteran la lista de ids (p. ej. editar el
+    // monto o el concepto): sin este guard, cada re-emisión desuscribe y
+    // resuscribe D1, reseteando devoluciones a [] y forzando un ciclo de
+    // carga nuevo. BUG LATENTE (4.1, destapado 21/10/2026 en validar 4.3b):
+    // el guard hacía `return` SIN emitir, así que un cambio de campos de
+    // obligaciones (monto editado) que no tocaba D1 nunca llegaba a la UI
+    // (fila/balance/header quedaban con el valor viejo). Ahora, si el
+    // conjunto no cambió pero SÍ hay docChanges reales, se publica igual.
     const ridKey = rids.length === 0 ? "" : [...rids].sort().join(",");
-    if (ridKey === prevRidKey) return;
+    if (ridKey === prevRidKey) {
+      if (snap?.docChanges()?.length > 0) emit();
+      return;
+    }
     prevRidKey = ridKey;
 
     // Desuscribir tandas previas cuando el conjunto de rids cambió.
@@ -110,7 +118,7 @@ export function subscribeReintegros({ db, uid, onData, onError }) {
     (snap) => {
       obligaciones = mapDocs(snap);
       oblLoaded = true;
-      resubscribeDevoluciones(obligaciones.map((o) => o.id));
+      resubscribeDevoluciones(obligaciones.map((o) => o.id), snap);
     },
     onError,
   );

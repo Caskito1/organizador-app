@@ -2,7 +2,9 @@
 // 4.3a — Pestaña «Activos»: acordeones Préstamos / Deudas (estilo /gastos)
 // con FilaReintegro + acciones de pago (Agregar pago / Saldar deuda).
 // El total de cada acordeón es el SALDO PENDIENTE (comportamiento de 4.2
-// sobre la pestaña activa).
+// sobre la pestaña activa). 4.3b: solo hace passthrough de la edición de
+// monto (ediciones + callbacks) — CerradosSection no los pasa, por lo que
+// en Saldados no hay edición ni chips.
 
 "use client";
 
@@ -19,6 +21,9 @@ export default function PendientesSection({
   openDeudas,
   onToggleDeudas,
   onPagar,
+  ediciones,
+  onEditarObligacion,
+  onEditarEntrega,
 }) {
   const totalPrestamos = prestamos.reduce((a, r) => a + saldoDe(r), 0);
   const totalDeudas = deudas.reduce((a, r) => a + saldoDe(r), 0);
@@ -49,6 +54,9 @@ export default function PendientesSection({
               r={r}
               entregas={entregaDe(r)}
               onPagar={onPagar}
+              ediciones={ediciones}
+              onEditarObligacion={onEditarObligacion}
+              onEditarEntrega={onEditarEntrega}
             />
           ))
         )}
@@ -74,6 +82,9 @@ export default function PendientesSection({
               r={r}
               entregas={entregaDe(r)}
               onPagar={onPagar}
+              ediciones={ediciones}
+              onEditarObligacion={onEditarObligacion}
+              onEditarEntrega={onEditarEntrega}
             />
           ))
         )}
