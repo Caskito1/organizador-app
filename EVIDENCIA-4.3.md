@@ -156,4 +156,10 @@ Fixture creado por REST con `Bearer owner` (backdate de `createdAt`; el propio a
 - ✅ Diff de 4.3c pasado al usuario; **OK y validación visual** del checklist (21/10) y del ajuste final de estilo de los ticks (22/10, "ya quedó correcto").
 - ✅ Commits separados en `staging`: `7ae1021` (código) + este commit (docs); **sin push**.
 - Fixture recreado el 22/10/2026 tras los gates (los reinicios de los emuladores regeneran los uids del seed: Registrador `mEdBhiG5…`, Contraparte `QTxe0x4Z…`; scripts en `$env:TEMP\opencode\fixture-43c.mjs` y `verify-43c.mjs`) — números re-verificados idénticos a §5.9.
-- `main` intacto; sin push a ningún lado (3 commits ahead de `origin/staging`: `7d41d39`, `2e1ba5f`, `687d65b` + ahora `7ae1021` y este).
+
+### 6.1 Advertencia de Preview y orden de cierre (decisión del usuario, 22/10/2026)
+
+- **Staging y Producción comparten el mismo proyecto Firebase** (`finanzas-app-1c5f6`): un deployment de **Preview** de `staging`, si alguien lo usa, **sí escribe en el Firestore de producción**, sometido a las **reglas actualmente desplegadas en Firebase** (las de producción). Por eso: **no se usa el Preview de este repo para Reintegros hasta el cierre de la Etapa 4**.
+- **Orden de cierre (cuando todo el bloque Etapa 4 esté junto):** (1) `npm run test:rules` final → (2) **deploy de reglas** a Firebase → (3) promover `staging` → `main` con **aprobación explícita** → (4) verificación en Producción.
+- **Antes del paso (2):** revisar que las reglas nuevas **no rompan nada de la app actual en `main`**. Dato verificado 22/10: `main` **no tiene** `firestore.rules`/`firestore.indexes.json`/`firebase.json` versionados (se versionaron por primera vez en la Etapa 4, desde `staging`) — además de `test:rules`, la comparación debe incluir las reglas **hoy desplegadas** en el proyecto (`REQUIERE_VALIDACIÓN_FIRESTORE`, lectura a cargo del usuario).
+- `main` intacto (=`origin/main` en `10ab576`); push de `staging` permitido como respaldo.
