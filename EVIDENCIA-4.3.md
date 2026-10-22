@@ -1,7 +1,7 @@
-# EVIDENCIA-4.3 — Reintegros: pago con método/fecha/hora (4.3a) y edición de monto (4.3b)
+# EVIDENCIA-4.3 — Reintegros: pago (4.3a), edición de monto (4.3b) y dinero/ítem + espejo (4.3c)
 
-**Estado:** 4.3a cerrada (commit `7d41d39` en `staging`, sin push). **4.3b: fases ② (helpers+harness) y ③ (UI) implementadas 21/10/2026 con gates en verde; pendiente validación manual del usuario y commit.**
-Repo: `AppFinanciera/` · rama `staging` · hoy 21/10/2026.
+**Estado:** 4.3a cerrada (commit `7d41d39`). **4.3b CERRADA 21/10/2026** (commits `2e1ba5f` código / `687d65b` esta evidencia, en `staging`, sin push). **4.3c CERRADA 22/10/2026** (commits `7ae1021` código / este commit docs, en `staging`, sin push): ajustes de QA (ticks desmarcados en ambos sentidos, fix de layout) + ajuste final de estilo del usuario validado en pantalla; gates repetidos en verde el 22/10.
+Repo: `AppFinanciera/` · rama `staging` · hoy 22/10/2026.
 
 ## 1. Entorno de prueba local (verificado 21/10/2026)
 
@@ -68,8 +68,92 @@ Los chips «Editado: $300 → $200 · 21/10» se muestran **solo en la pestaña 
 | `npm run harness:reintegros` | **31/31** (20 previos + H15–H21 + HS5) |
 | `npm run test:rules` | **44/44** — `firestore.rules` intacto |
 
-## 5. Pendientes
+## 5. Subetapa 4.3c — tick dinero/ítem en ambos sentidos + espejo + chip (21/10/2026)
 
-- Validación manual del usuario en local (checklist de fase ③) y aprobación para commit de 4.3b.
-- ⚠️ Los emuladores se reiniciaron para los gates: **los fixtures de prueba se perdieron** (el emulador no persiste) — re-crear las 3 obligaciones (sin pagos / parcial / liquidada) antes de validar.
-- Sin commitear hasta OK del usuario; sin push; `main` intacto.
+Decisiones de producto (todas del usuario, 21/10/2026): quien presta o paga **siempre tiene una salida**; el tick solo decide si **el otro** tiene una entrada. El tick nuevo de `/agregar` para «presté» (por_cobrar) se llama **«La otra persona recibió dinero (efectivo o transferencia)»**. **Actualización al validar (21/10/2026): AMBOS ticks vienen DESMARCADOS por defecto** (el de por_cobrar estaba aprobado con default marcado; el usuario lo cambió al hacer la validación visual) — sin marca se guarda `movimientoInicialTipo: "item"`, por lo que **el espejo de la contraparte queda opt-in**: no bookkea la entrada hasta que se marque. Mi salida automática en por_cobrar no cambia en ningún caso. El tick existente de «me prestaron» (por_devolver, *«Me entró dinero…»*, desmarcado) no cambió. Los pagos siguen igual. **Supuesto documentado:** estos movimientos se ingresan solo desde esta app.
+
+### 5.1 Campo nuevo: `movimientoInicialTipo`
+
+- **`movimientoInicialTipo: "dinero" | "item"`**, persistido **solo en por_cobrar** (en por_devolver el dinero/ítem ya vive en `movimientoInicial`: `"entrada"` = dinero, `"ninguno"` = ítem; el campo no se envía — esquema limpio).
+- **Valor distinto de `dinero`/`item` (o ausente) se trata como AUSENTE**: para el **espejo** se asume **dinero** (retrocompatibilidad con obligaciones viejas); para el **chip** no se muestra. Caso de harness: **H28**. El **default de la UI** (21/10/2026) es el tick **desmarcado** → `item` en docs nuevos por_cobrar; el espejo se activa solo al marcar.
+- Validación en `submitReintegro`: si viene, debe ser `dinero`/`item` y SOLO en por_cobrar (`VALIDACION` si no) — H31.
+
+### 5.2 Tabla del ESPEJO (lado de la contraparte MIEMBRO, derivado al leer en `modelo.js`)
+
+| Doc (sentido de quien registró) | Registrador ve (mes de la alta) | Contraparte **miembro** ve (mes de la alta) |
+|---|---|---|
+| por_cobrar + dinero | Salida (igual que hoy) | **Entrada** |
+| por_cobrar + ítem | Salida | Nada |
+| por_cobrar vieja **sin campo** | Salida | **Entrada** (se asume dinero) |
+| por_devolver (registra quien recibe) | Entrada si marcó «Me entró dinero», si no $0 | **Salida SIEMPRE** (aunque sea ítem) |
+
+- **Externas: sin espejo** (el uid externo no está en `participantes`, nunca matchea el filtro). No participantes: sin espejo (H26).
+- La contraparte **nunca bookkea una salida propia del doc ajeno** (garantía de no duplicar de I-8 preservada — H13 reescrito: bookkea la entrada espejo, jamás salida propia).
+- El espejo usa el **monto vigente**: si el registrador edita el monto (4.3b), ambos libros ven el monto nuevo (H29).
+
+### 5.3 Efecto RETROACTIVO (a considerar por el usuario)
+
+Al aplicarse el espejo sobre obligaciones **existentes**, los meses ya pasados de la contraparte **cambian**: una obligación de septiembre creada por el otro hoy suma entrada/salida en septiembre de SU libro (antes `$0`). El historial no se reescribe en Firestore (no hay escrituras: todo es derivado al leer), pero el agregado mensual mostrado sí incluye esos movimientos retroactivamente.
+
+### 5.4 Chip «Dinero»/«Ítem»
+
+- Chip **discreto** en `FilaReintegro`, derivado con `tipoDineroDe()` del documento (sin suscripciones): se muestra en **Activos y en Saldados**.
+- por_devolver → desde `movimientoInicial` (entrada → Dinero, ninguno → Ítem); por_cobrar → desde `movimientoInicialTipo`; **si falta el campo (obligación vieja): sin chip**.
+
+### 5.5 Verificación única que frenaba — reglas de create: ✅ SIN CAMBIOS
+
+`firestore.rules` (create de `reintegros`, líneas 225-254) **no tiene lista cerrada** (`hasOnly` solo existe en las ramas de update: (a)/(d)). Acepta el campo nuevo tal cual → **no se tocan reglas ni índices** (criterio g del usuario), test:rules **44/44 sin cambios** y **sin pegado manual a producción**. Nota: la rama de edición de monto (d) usa `affectedKeys().hasOnly(['monto'])`, por lo que `movimientoInicialTipo` queda **inmutable de facto** (solo create) — coherente con que no se edita después.
+
+### 5.6 Archivos tocados (7)
+
+1. `app/reintegros/helpers/modelo.js` — `tipoDineroDe()`, `esDineroInicial()`/`esContraparteMiembro()` (internos) y el espejo en `entradasDelMes`/`salidasDelMes`.
+2. `app/agregar/components/reintegros/helpers/submitReintegro.js` — valida y persiste el campo (solo por_cobrar).
+3. `app/agregar/components/reintegros/hooks/useReintegroModal.js` — estado `otroRecibioDinero` (default **false** — ambos ticks desmarcados), `movimientoInicialTipo` derivado.
+4. `app/agregar/components/reintegros/ReintegroModal.jsx` — tick por_cobrar («La otra persona recibió dinero…», **desmarcado por defecto**) + envío del campo; ambos ticks con checkbox de tamaño nativo (ver nota de estilo ↓).
+5. `app/reintegros/components/FilaReintegro.jsx` — `ChipTipoDinero`.
+6. `tests/harness/reintegros.harness.test.mjs` — H13 reescrito + H22–H31.
+7. `EVIDENCIA-4.3.md` — este documento.
+
+**Nota de estilo (21–22/10/2026):** `globals.css:66-77` aplica `width:100%; padding:12px 16px; border-radius:14px` a **todo** `input`, por lo que los dos checkboxes ocupaban ~50% del ancho del bloque. Fix en los dos ticks: `className="mt-[3px] !w-4 min-w-4 shrink-0 border-0 bg-transparent p-0"` (anula el ancho/padding heredado, casilla de 16px fija) + labels con `text-[12px]` — **ajuste final de estilo aplicado por el usuario (22/10/2026), validado en pantalla**. Decisión registrada: fix local en JSX (no se tocó `globals.css`, para no afectar a los demás inputs de la app).
+
+### 5.7 Harness (H13 reescrito + H22–H31)
+
+- **H13** reescrito: preserva la garantía de no-duplicar (contraparte: entradas espejo, **cero** salidas propias del doc ajeno).
+- **H22** por_cobrar dinero → espejo entrada · **H23** ítem → nada · **H24** por_devolver con tick → contraparte salida · **H25** por_devolver sin tick (ítem) → contraparte salida **siempre** · **H26** externa/no participante → sin espejo · **H27** vieja sin campo → espejo dinero + sin chip · **H28** valor inválido → espejo dinero + sin chip · **H29** espejo con monto editado vía `editarObligacion` · **H30** `tipoDineroDe` (todos los casos del chip) · **H31** alta con/sin el campo y rechazos (`VALIDACION`).
+
+### 5.8 Gates 4.3c (21/10/2026; repetidos 22/10/2026 tras los ajustes de estilo) — todos en verde
+
+| Gate | Resultado |
+|---|---|
+| `npm run lint` | baseline 4 preexistentes, **0 nuevos** |
+| `npm run build` | EXIT 0 — 10 páginas |
+| `npm run harness:reintegros` | **41/41** (fail 0) — 31 previos + H22–H31 |
+| `npm run test:rules` | **44/44** — `firestore.rules` e índices intactos |
+
+Puertos 8080/9099/3000/4000 liberados antes de los gates y restaurados después (emuladores + siembra + dev `/login` 200).
+
+### 5.9 Fixture de emulador (post-gates) + «Dinero del mes» esperado
+
+Fixture creado por REST con `Bearer owner` (backdate de `createdAt`; el propio alta de la app no permite antigüedad: `createdAt == request.time`):
+
+| Doc | Quién registra | Sentido | Monto | Campo |
+|---|---|---|---|---|
+| `FIX43C-o1` (15/09) | Ana → Bruno | por_cobrar | $800 | `movimientoInicialTipo: "dinero"`, `devuelto: 300` |
+| `FIX43C-o2` (18/09) | Ana → Bruno | por_cobrar | $1500 | `movimientoInicialTipo: "item"` |
+| `FIX43C-o3` (20/09) | Bruno → Ana | por_devolver | $600 | `movimientoInicial: "entrada"` (tick marcado) |
+| `FIX43C-o4` (22/09) | Bruno → Ana | por_devolver | $400 | `movimientoInicial: "ninguno"` (sin tick) |
+| `FIX43C-pago1` (05/10) | Bruno paga sobre O1 | — | $300 | — |
+
+**Números esperados** (calculados ejecutando `modelo.js` real sobre los docs del fixture):
+
+| Mes | Ana | Bruno |
+|---|---|---|
+| **Septiembre** | Entradas $0 · **Salidas $3.300** (800+1500 propias + 600+400 espejo de por_devolver) | **Entradas $1.400** (800 espejo de O1 dinero + 600 propia con tick) · Salidas $0 |
+| **Octubre** | **Entradas $300** (pago recibido) · Salidas $0 | Entradas $0 · **Salidas $300** (pago realizado) |
+
+## 6. Cierre y pendientes
+
+- ✅ Diff de 4.3c pasado al usuario; **OK y validación visual** del checklist (21/10) y del ajuste final de estilo de los ticks (22/10, "ya quedó correcto").
+- ✅ Commits separados en `staging`: `7ae1021` (código) + este commit (docs); **sin push**.
+- Fixture recreado el 22/10/2026 tras los gates (los reinicios de los emuladores regeneran los uids del seed: Registrador `mEdBhiG5…`, Contraparte `QTxe0x4Z…`; scripts en `$env:TEMP\opencode\fixture-43c.mjs` y `verify-43c.mjs`) — números re-verificados idénticos a §5.9.
+- `main` intacto; sin push a ningún lado (3 commits ahead de `origin/staging`: `7d41d39`, `2e1ba5f`, `687d65b` + ahora `7ae1021` y este).
