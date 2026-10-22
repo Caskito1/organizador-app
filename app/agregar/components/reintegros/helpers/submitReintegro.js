@@ -34,6 +34,7 @@ export async function submitReintegro({
   concepto,
   detalle,
   movimientoInicial,
+  movimientoInicialTipo,
   rid: ridParam,
 }) {
   // Montos: SIEMPRE enteros en pesos (decisión del usuario, 16/10/2026).
@@ -64,6 +65,23 @@ export async function submitReintegro({
       "VALIDACION",
       `movimientoInicial inválido: ${movimientoInicial}`,
     );
+  }
+  // 4.3c: movimientoInicialTipo es OPCIONAL (las obligaciones viejas no lo
+  // traen). Si viene, debe ser un valor válido y SOLO en por_cobrar — en
+  // por_devolver el dinero/ítem ya vive en movimientoInicial.
+  if (movimientoInicialTipo !== undefined) {
+    if (!["dinero", "item"].includes(movimientoInicialTipo)) {
+      throw new ReintegroError(
+        "VALIDACION",
+        `movimientoInicialTipo inválido: ${movimientoInicialTipo}`,
+      );
+    }
+    if (sentido !== "por_cobrar") {
+      throw new ReintegroError(
+        "VALIDACION",
+        `movimientoInicialTipo solo aplica a por_cobrar (recibido en: ${sentido})`,
+      );
+    }
   }
   if (!contraparteNombre?.trim()) {
     throw new ReintegroError(
@@ -120,6 +138,11 @@ export async function submitReintegro({
       gastoVinculadoId: null,
       createdAt: serverTimestamp(),
     };
+    // 4.3c: se persiste SOLO cuando llega (por_cobrar); por_devolver y las
+    // llamadas sin el parámetro quedan sin el campo (esquema limpio).
+    if (movimientoInicialTipo !== undefined) {
+      payload.movimientoInicialTipo = movimientoInicialTipo;
+    }
 
     tx.set(doc(db, "reintegros", rid), payload);
 

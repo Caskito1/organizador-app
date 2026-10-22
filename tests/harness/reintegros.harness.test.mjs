@@ -23,7 +23,8 @@
 //   10 (H10)  estado derivado: sin campo `estado` almacenado
 //   11 (H11)  monto NO entero → MONTO_INVALIDO (cliente) y `is int` (reglas)
 //   12 (H12)  validaciones de entrada: NO_ENCONTRADA, campos requeridos
-//   13 (H13)  entradas/salidas I-8: movimientoInicial solo si registradoPor === uid
+//   13 (H13)  I-8 + espejo 4.3c: movimientoInicial propio sí; la contraparte
+//             nunca bookkea una salida propia ajena, pero sí la entrada espejo
 //   14 (H14)  contraparteUid externa '': null (ajuste 6, 4.2) + tipo inválido
 //   +  (HS0)  suscripción con 0 obligaciones (sin D1 con lista vacía)
 //   +  (HS1)  alta nueva → re-emisión de la suscripción
@@ -43,6 +44,17 @@
 // H15–H21: edición de monto (4.3b, 21/10/2026). NOTA: en H17, LIQUIDADA es
 // ÚNICAMENTE guardia de cliente — las reglas no la bloquean (ver
 // EVIDENCIA-4.3.md).
+//   +  (H22)  espejo por_cobrar + dinero: contraparte ve entrada en la alta
+//   +  (H23)  espejo por_cobrar + ítem: contraparte no bookkea nada
+//   +  (H24)  espejo por_devolver con tick: contraparte ve salida en la alta
+//   +  (H25)  espejo por_devolver sin tick (ítem): contraparte ve salida (siempre)
+//   +  (H26)  externa / no participante: sin espejo
+//   +  (H27)  retrocompat: por_cobrar vieja sin movimientoInicialTipo → dinero
+//   +  (H28)  movimientoInicialTipo inválido → espejo como dinero, sin chip
+//   +  (H29)  espejo con monto editado vía editarObligacion
+//   +  (H30)  tipoDineroDe (chip Dinero/Ítem): derivación por sentidos
+//   +  (H31)  alta con movimientoInicialTipo: dinero/item, ausente y rechazos
+// H22–H31: espejo, chip y alta (4.3c, 21/10/2026).
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -86,6 +98,7 @@ import {
   sumaEntregasNoEliminadas,
   entradasDelMes,
   salidasDelMes,
+  tipoDineroDe,
 } from "../../app/reintegros/helpers/modelo.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -839,20 +852,23 @@ test("H12 — submitDevolucion: NO_ENCONTRADA / permisos para rid inexistente; c
   assert.equal((await readEntregas(rid, A)).length, 0);
 });
 
-// ═══ Caso 13 — I-8: movimientoInicial solo si registradoPor === uid ═══
+// ═══ Caso 13 — I-8 + espejo 4.3c: sin duplicación ═══
 //
-// §6.2: entradas/salidas del mes suman el movimientoInicial SOLO de las
-// obligaciones creadas por el usuario (registradoPor === uid). La contraparte
-// NO cuenta el movimientoInicial ajeno: el registrador lo registró en SU libro,
-// no en el de la contraparte (I-8, atribución).
+// §6.2 (actualizado 4.3c): entradas/salidas suman el movimientoInicial SOLO
+// de las obligaciones creadas por el usuario (registradoPor === uid). La
+// contraparte NUNCA bookkea una salida propia ajena (I-8: atribución al
+// registrador — no duplica), pero sí bookkea el espejo: en este escena (doc
+// por_cobrar sin movimientoInicialTipo = viejo = dinero), A ve su ENTRADA
+// espejo en el mes de la alta.
 
-test("H13 — entradas/salidas I-8: movimientoInicial propio sí, ajeno no (contraparte)", () => {
+test("H13 — I-8: movimientoInicial propio sí; contraparte bookkea la entrada espejo, nunca salida propia", () => {
   const start = new Date(2026, 9, 1); // octubre 2026
   const nextStart = new Date(2026, 10, 1); // noviembre 2026
   const createdAt = Timestamp.fromDate(new Date(2026, 9, 15));
 
   // Obl CREADA POR B (registradoPor=B), sentido por_cobrar, movimientoInicial
-  // "salida" (B ya registró el gasto en SU libro). A es la contraparte.
+  // "salida" (B ya registró la salida en SU libro). A es la contraparte.
+  // Sin movimientoInicialTipo (doc viejo) → el espejo la trata como dinero.
   const oblDeB = {
     id: "i8_de_b",
     registradoPor: B,
@@ -879,16 +895,17 @@ test("H13 — entradas/salidas I-8: movimientoInicial propio sí, ajeno no (cont
     "registrador B: sin entradas (no hay entregas recibidas)",
   );
 
-  // Vista de A (contraparte): la salida de B NO cuenta (0).
+  // Vista de A (contraparte miembro): nunca una salida propia del doc ajeno
+  // (I-8: no duplica), pero sí la entrada espejo 4.3c (por_cobrar + dinero).
   assert.equal(
     salidasDelMes({ obligaciones, entregas, uid: A, start, nextStart }),
     0,
-    "contraparte A NO cuenta el movimientoInicial ajeno de B (I-8)",
+    "contraparte A NO bookkea salida propia del doc ajeno (I-8, no duplica)",
   );
   assert.equal(
     entradasDelMes({ obligaciones, entregas, uid: A, start, nextStart }),
-    0,
-    "contraparte A: sin entradas",
+    1000,
+    "contraparte A bookkea la entrada espejo en el mes de la alta (4.3c)",
   );
 });
 
@@ -1487,4 +1504,491 @@ test("HS5 — editar el monto general re-emite la suscripción: la UI ve el mont
   collector.unsub();
   await sleep(100);
   assert.equal(collector.error, null, "sin errores de suscripción");
+});
+
+// ═══ Caso 22 — espejo por_cobrar + dinero (4.3c) ═══
+//
+// Tabla del espejo (solo contraparte miembro): por_cobrar con dinero →
+// la contraparte ve ENTRADA en el mes de la alta. El registrador no cambia
+// (su salida automática sigue). La contraparte nunca bookkea una salida
+// propia de un doc ajeno (garantía de no duplicación).
+
+test("H22 — espejo por_cobrar dinero: registrador ve salida, contraparte miembro ve entrada en la alta", () => {
+  const start = new Date(2026, 8, 1); // septiembre 2026
+  const nextStart = new Date(2026, 9, 1);
+  const createdAt = Timestamp.fromDate(new Date(2026, 8, 15));
+  const obl = {
+    id: "h22_dinero",
+    registradoPor: A,
+    contraparteUid: B,
+    participantes: [A, B],
+    sentido: "por_cobrar",
+    monto: 800,
+    devuelto: 0,
+    movimientoInicial: "salida",
+    movimientoInicialTipo: "dinero",
+    createdAt,
+  };
+  const obligaciones = [obl];
+  const entregas = [];
+
+  // Registrador A: su salida automática, sin cambios.
+  assert.equal(
+    salidasDelMes({ obligaciones, entregas, uid: A, start, nextStart }),
+    800,
+    "registrador A: salida en el mes de la alta",
+  );
+  assert.equal(
+    entradasDelMes({ obligaciones, entregas, uid: A, start, nextStart }),
+    0,
+    "registrador A: sin entradas",
+  );
+
+  // Contraparte B (miembro): entrada espejo; jamás salida propia ajena.
+  assert.equal(
+    entradasDelMes({ obligaciones, entregas, uid: B, start, nextStart }),
+    800,
+    "espejo: contraparte B ve entrada en el mes de la alta",
+  );
+  assert.equal(
+    salidasDelMes({ obligaciones, entregas, uid: B, start, nextStart }),
+    0,
+    "no duplica: B no bookkea salida propia del doc ajeno",
+  );
+});
+
+// ═══ Caso 23 — espejo por_cobrar + ítem (4.3c) ═══
+
+test("H23 — espejo por_cobrar ítem: la contraparte no bookkea nada", () => {
+  const start = new Date(2026, 8, 1);
+  const nextStart = new Date(2026, 9, 1);
+  const createdAt = Timestamp.fromDate(new Date(2026, 8, 15));
+  const obl = {
+    id: "h23_item",
+    registradoPor: A,
+    contraparteUid: B,
+    participantes: [A, B],
+    sentido: "por_cobrar",
+    monto: 1500,
+    devuelto: 0,
+    movimientoInicial: "salida",
+    movimientoInicialTipo: "item",
+    createdAt,
+  };
+  const obligaciones = [obl];
+  const entregas = [];
+
+  assert.equal(
+    salidasDelMes({ obligaciones, entregas, uid: A, start, nextStart }),
+    1500,
+    "registrador A: salida igual (el ítem no cambia su libro)",
+  );
+  assert.equal(
+    entradasDelMes({ obligaciones, entregas, uid: B, start, nextStart }),
+    0,
+    "ítem: la contraparte B no ve entrada en la alta",
+  );
+  assert.equal(
+    salidasDelMes({ obligaciones, entregas, uid: B, start, nextStart }),
+    0,
+    "ítem: la contraparte B tampoco ve salida",
+  );
+});
+
+// ═══ Caso 24 — espejo por_devolver con tick (4.3c) ═══
+//
+// por_devolver (registra quien recibe) → la contraparte miembro ve
+// SIEMPRE su SALIDA en el mes de la alta (aquí con movimientoInicial
+// "entrada" porque marcó «Me entró dinero»).
+
+test("H24 — espejo por_devolver con tick: registrador ve entrada, contraparte miembro ve salida en la alta", () => {
+  const start = new Date(2026, 8, 1);
+  const nextStart = new Date(2026, 9, 1);
+  const createdAt = Timestamp.fromDate(new Date(2026, 8, 15));
+  const obl = {
+    id: "h24_dev_dinero",
+    registradoPor: B,
+    contraparteUid: A,
+    participantes: [A, B],
+    sentido: "por_devolver",
+    monto: 600,
+    devuelto: 0,
+    movimientoInicial: "entrada",
+    createdAt,
+  };
+  const obligaciones = [obl];
+  const entregas = [];
+
+  // Registrador B (recibe): entrada propia, sin cambios.
+  assert.equal(
+    entradasDelMes({ obligaciones, entregas, uid: B, start, nextStart }),
+    600,
+    "registrador B: entrada en el mes de la alta",
+  );
+  assert.equal(
+    salidasDelMes({ obligaciones, entregas, uid: B, start, nextStart }),
+    0,
+    "registrador B: sin salidas",
+  );
+
+  // Contraparte A (la que entregó): SIEMPRE salida en la alta.
+  assert.equal(
+    salidasDelMes({ obligaciones, entregas, uid: A, start, nextStart }),
+    600,
+    "espejo: contraparte A ve salida en el mes de la alta",
+  );
+  assert.equal(
+    entradasDelMes({ obligaciones, entregas, uid: A, start, nextStart }),
+    0,
+    "no duplica: A no bookkea entrada propia del doc ajeno",
+  );
+});
+
+// ═══ Caso 25 — espejo por_devolver sin tick / ítem (4.3c) ═══
+//
+// Decisión: en por_devolver la contraparte miembro ve SIEMPRE salida en
+// el mes de la alta, incluso cuando el registrador registró un ítem
+// (movimientoInicial "ninguno").
+
+test("H25 — espejo por_devolver ítem: registrador 0, contraparte miembro ve salida igual", () => {
+  const start = new Date(2026, 8, 1);
+  const nextStart = new Date(2026, 9, 1);
+  const createdAt = Timestamp.fromDate(new Date(2026, 8, 15));
+  const obl = {
+    id: "h25_dev_item",
+    registradoPor: B,
+    contraparteUid: A,
+    participantes: [A, B],
+    sentido: "por_devolver",
+    monto: 400,
+    devuelto: 0,
+    movimientoInicial: "ninguno",
+    createdAt,
+  };
+  const obligaciones = [obl];
+  const entregas = [];
+
+  assert.equal(
+    entradasDelMes({ obligaciones, entregas, uid: B, start, nextStart }),
+    0,
+    "registrador B con ítem: sin entrada",
+  );
+  assert.equal(
+    salidasDelMes({ obligaciones, entregas, uid: A, start, nextStart }),
+    400,
+    "espejo: la contraparte A ve salida en la alta SIEMPRE (ítem incluido)",
+  );
+  assert.equal(
+    entradasDelMes({ obligaciones, entregas, uid: A, start, nextStart }),
+    0,
+    "contraparte A: sin entradas",
+  );
+});
+
+// ═══ Caso 26 — externa / no participante: sin espejo (4.3c) ═══
+
+test("H26 — externa: sin espejo para nadie (el uid externo no está en participantes)", () => {
+  const start = new Date(2026, 8, 1);
+  const nextStart = new Date(2026, 9, 1);
+  const createdAt = Timestamp.fromDate(new Date(2026, 8, 15));
+  const obl = {
+    id: "h26_ext",
+    registradoPor: A,
+    contraparteUid: null,
+    participantes: [A],
+    sentido: "por_cobrar",
+    monto: 500,
+    devuelto: 0,
+    movimientoInicial: "salida",
+    movimientoInicialTipo: "dinero",
+    createdAt,
+  };
+  const obligaciones = [obl];
+  const entregas = [];
+
+  // Un uid ajeno (no participante) no ve nada, aunque el doc diga dinero.
+  assert.equal(
+    entradasDelMes({ obligaciones, entregas, uid: B, start, nextStart }),
+    0,
+    "no participante: sin espejo de entrada",
+  );
+  assert.equal(
+    salidasDelMes({ obligaciones, entregas, uid: B, start, nextStart }),
+    0,
+    "no participante: sin espejo de salida",
+  );
+  // El registrador mantiene su libro.
+  assert.equal(
+    salidasDelMes({ obligaciones, entregas, uid: A, start, nextStart }),
+    500,
+    "registrador A: salida sin cambios",
+  );
+});
+
+// ═══ Caso 27 — retrocompat: vieja sin movimientoInicialTipo (4.3c) ═══
+//
+// Obligaciones existentes (creadas antes de 4.3c) no traen el campo: para
+// el espejo se interpretan como dinero (decisión 4.3c).
+
+test("H27 — retrocompat: por_cobrar vieja sin movimientoInicialTipo → el espejo la trata como dinero", () => {
+  const start = new Date(2026, 8, 1);
+  const nextStart = new Date(2026, 9, 1);
+  const createdAt = Timestamp.fromDate(new Date(2026, 8, 15));
+  const obl = {
+    id: "h27_vieja",
+    registradoPor: A,
+    contraparteUid: B,
+    participantes: [A, B],
+    sentido: "por_cobrar",
+    monto: 350,
+    devuelto: 0,
+    movimientoInicial: "salida",
+    createdAt,
+    // sin movimientoInicialTipo (doc previo a 4.3c)
+  };
+  const obligaciones = [obl];
+  const entregas = [];
+
+  assert.equal(
+    entradasDelMes({ obligaciones, entregas, uid: B, start, nextStart }),
+    350,
+    "vieja sin campo: espejo de dinero (entrada para B en la alta)",
+  );
+  assert.equal(
+    salidasDelMes({ obligaciones, entregas, uid: A, start, nextStart }),
+    350,
+    "registrador A: salida sin cambios",
+  );
+  assert.equal(
+    tipoDineroDe(obl),
+    null,
+    "pero SIN chip: por_cobrar sin campo no muestra chip",
+  );
+});
+
+// ═══ Caso 28 — movimientoInicialTipo inválido (4.3c, ajuste b) ═══
+//
+// Un valor distinto de "dinero"/"item" se trata como AUSENTE: el espejo
+// lo interpreta como dinero y el chip no se muestra.
+
+test("H28 — movimientoInicialTipo inválido: espejo como dinero, chip ausente", () => {
+  const start = new Date(2026, 8, 1);
+  const nextStart = new Date(2026, 9, 1);
+  const createdAt = Timestamp.fromDate(new Date(2026, 8, 15));
+  const obl = {
+    id: "h28_invalido",
+    registradoPor: A,
+    contraparteUid: B,
+    participantes: [A, B],
+    sentido: "por_cobrar",
+    monto: 1000,
+    devuelto: 0,
+    movimientoInicial: "salida",
+    movimientoInicialTipo: "moneda",
+    createdAt,
+  };
+  const obligaciones = [obl];
+  const entregas = [];
+
+  assert.equal(
+    entradasDelMes({ obligaciones, entregas, uid: B, start, nextStart }),
+    1000,
+    "valor desconocido → se asume dinero para el espejo",
+  );
+  assert.equal(
+    tipoDineroDe(obl),
+    null,
+    "valor desconocido → sin chip",
+  );
+});
+
+// ═══ Caso 29 — espejo con monto editado vía editarObligacion (4.3c) ═══
+//
+// El espejo usa el monto VIGENTE del documento: si el registrador edita el
+// monto (4.3b, devuelto == 0), ambos libros ven el monto nuevo.
+
+test("H29 — espejo con monto editado: contraparte ve el monto nuevo", async () => {
+  const rid = "h29_espejo_edit";
+  await seedObl(
+    rid,
+    baseObl({
+      sentido: "por_cobrar",
+      movimientoInicial: "salida",
+      movimientoInicialTipo: "dinero",
+      monto: 1000,
+      devuelto: 0,
+    }),
+  );
+
+  await editarObligacion({ db: dbAs(A), uid: A, rid, monto: 1500 });
+
+  const obl = await readObl(rid, A);
+  assert.equal(obl.monto, 1500, "monto editado");
+
+  const start = new Date(2026, 9, 1); // octubre 2026 (createdAt = ahora)
+  const nextStart = new Date(2026, 10, 1);
+  const obligaciones = [obl];
+  const entregas = [];
+
+  assert.equal(
+    salidasDelMes({ obligaciones, entregas, uid: A, start, nextStart }),
+    1500,
+    "registrador A: salida con el monto editado",
+  );
+  assert.equal(
+    entradasDelMes({ obligaciones, entregas, uid: B, start, nextStart }),
+    1500,
+    "espejo: contraparte B ve el monto editado en la alta",
+  );
+});
+
+// ═══ Caso 30 — tipoDineroDe: derivación del chip (4.3c) ═══
+//
+// por_devolver → de movimientoInicial; por_cobrar → de
+// movimientoInicialTipo (ausente o desconocido → null = sin chip).
+
+test("H30 — tipoDineroDe: chip Dinero/Ítem según sentido y campos", () => {
+  // por_cobrar con campo
+  assert.equal(
+    tipoDineroDe({ sentido: "por_cobrar", movimientoInicialTipo: "dinero" }),
+    "dinero",
+  );
+  assert.equal(
+    tipoDineroDe({ sentido: "por_cobrar", movimientoInicialTipo: "item" }),
+    "item",
+  );
+  // por_cobrar sin campo (vieja) o inválido → sin chip
+  assert.equal(
+    tipoDineroDe({ sentido: "por_cobrar", movimientoInicial: "salida" }),
+    null,
+  );
+  assert.equal(
+    tipoDineroDe({ sentido: "por_cobrar", movimientoInicialTipo: "otra" }),
+    null,
+  );
+  // por_devolver → desde movimientoInicial (no usa el campo nuevo)
+  assert.equal(
+    tipoDineroDe({ sentido: "por_devolver", movimientoInicial: "entrada" }),
+    "dinero",
+  );
+  assert.equal(
+    tipoDineroDe({ sentido: "por_devolver", movimientoInicial: "ninguno" }),
+    "item",
+  );
+});
+
+// ═══ Caso 31 — alta con movimientoInicialTipo (4.3c) ═══
+//
+// El campo solo viaja en por_cobrar (dinero = tick marcado, item =
+// desmarcado; default de la UI = desmarcado = item, decisión 21/10/2026).
+// por_devolver lo lleva codificado en movimientoInicial: si igual llegara
+// el campo, o si el valor no es dinero/item, es VALIDACION sin escritura.
+
+test("H31 — submitReintegro con movimientoInicialTipo: dinero/item en por_cobrar, ausente y rechazos", async () => {
+  // a) por_cobrar CON tick (dinero) — marcado a mano en la UI (el default
+  // es desmarcado = item)
+  const { rid: ridDinero } = await submitReintegro({
+    db: dbAs(A),
+    uid: A,
+    uidNombre: "Alice",
+    sentido: "por_cobrar",
+    monto: 800,
+    contraparteUid: B,
+    contraparteNombre: "Bob",
+    groupId: null,
+    concepto: "Préstamo con dinero",
+    detalle: null,
+    movimientoInicial: "salida",
+    movimientoInicialTipo: "dinero",
+  });
+  const oblD = await readObl(ridDinero, A);
+  assert.equal(oblD.movimientoInicialTipo, "dinero");
+  assert.equal(oblD.movimientoInicial, "salida", "mi salida automática intacta");
+
+  // b) por_cobrar SIN tick (ítem)
+  const { rid: ridItem } = await submitReintegro({
+    db: dbAs(A),
+    uid: A,
+    uidNombre: "Alice",
+    sentido: "por_cobrar",
+    monto: 1500,
+    contraparteUid: B,
+    contraparteNombre: "Bob",
+    groupId: null,
+    concepto: "Notebook en préstamo",
+    detalle: null,
+    movimientoInicial: "salida",
+    movimientoInicialTipo: "item",
+  });
+  const oblI = await readObl(ridItem, A);
+  assert.equal(oblI.movimientoInicialTipo, "item");
+  assert.equal(oblI.movimientoInicial, "salida", "la salida propia no cambia");
+
+  // c) por_devolver SIN el campo (la UI no lo envía) → esquema sin el campo
+  const { rid: ridDev } = await submitReintegro({
+    db: dbAs(A),
+    uid: A,
+    uidNombre: "Alice",
+    sentido: "por_devolver",
+    monto: 600,
+    contraparteUid: B,
+    contraparteNombre: "Bob",
+    groupId: null,
+    concepto: "Me prestaron con dinero",
+    detalle: null,
+    movimientoInicial: "entrada",
+  });
+  const oblDev = await readObl(ridDev, A);
+  assert.ok(
+    !("movimientoInicialTipo" in oblDev),
+    "por_devolver: sin campo (el dinero/ítem vive en movimientoInicial)",
+  );
+
+  // d) por_devolver CON el campo → VALIDACION
+  await assert.rejects(
+    () =>
+      submitReintegro({
+        db: dbAs(A),
+        uid: A,
+        uidNombre: "Alice",
+        sentido: "por_devolver",
+        monto: 600,
+        contraparteUid: B,
+        contraparteNombre: "Bob",
+        groupId: null,
+        concepto: "Mal sentido",
+        detalle: null,
+        movimientoInicial: "entrada",
+        movimientoInicialTipo: "dinero",
+      }),
+    (err) => {
+      assert.ok(err instanceof ReintegroError);
+      assert.equal(err.code, "VALIDACION");
+      return true;
+    },
+  );
+
+  // e) valor inválido → VALIDACION
+  await assert.rejects(
+    () =>
+      submitReintegro({
+        db: dbAs(A),
+        uid: A,
+        uidNombre: "Alice",
+        sentido: "por_cobrar",
+        monto: 800,
+        contraparteUid: B,
+        contraparteNombre: "Bob",
+        groupId: null,
+        concepto: "Valor raro",
+        detalle: null,
+        movimientoInicial: "salida",
+        movimientoInicialTipo: "moneda",
+      }),
+    (err) => {
+      assert.ok(err instanceof ReintegroError);
+      assert.equal(err.code, "VALIDACION");
+      return true;
+    },
+  );
 });

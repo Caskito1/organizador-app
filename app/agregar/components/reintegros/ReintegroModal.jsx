@@ -93,6 +93,7 @@ export default function ReintegroModal({ onClose }) {
       concepto: m.concepto,
       detalle: m.detalle,
       movimientoInicial: m.movimientoInicial,
+      movimientoInicialTipo: m.movimientoInicialTipo,
       rid: m.rid,
     };
 
@@ -380,6 +381,26 @@ export default function ReintegroModal({ onClose }) {
           <p className="text-[14px] text-text">{hoy} (se registra al guardar)</p>
         </div>
 
+        {/* DINERO A LA CONTRAPARTE — solo por_cobrar (4.3c); DESMARCADO por
+            defecto (ambos ticks, decisión 21/10/2026): sin marca se guarda
+            "item" y el espejo de la contraparte queda opt-in. Mi salida
+            automática en por_cobrar no cambia. El input anula el ancho/padding
+            heredados de globals.css (width:100%) para no ocupar la mitad. */}
+        {m.sentido === "por_cobrar" && (
+          <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-[14px] border border-border bg-white/3 px-4 py-3">
+            <input
+              type="checkbox"
+              checked={m.otroRecibioDinero}
+              onChange={m.toggleOtroRecibioDinero}
+              disabled={bloqueado}
+              className="mt-[3px] !w-4 min-w-4 shrink-0 border-0 bg-transparent p-0"
+            />
+            <span className="text-[12px] leading-[1.5] text-text">
+              La otra persona recibió dinero (efectivo o transferencia)
+            </span>
+          </label>
+        )}
+
         {/* DINERO ENTRADO — solo por_devolver; deriva movimientoInicial */}
         {m.sentido === "por_devolver" && (
           <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-[14px] border border-border bg-white/3 px-4 py-3">
@@ -388,9 +409,9 @@ export default function ReintegroModal({ onClose }) {
               checked={m.meEntroDinero}
               onChange={m.toggleMeEntroDinero}
               disabled={bloqueado}
-              className="mt-[3px]"
+              className="mt-[3px] !w-4 min-w-4 shrink-0 border-0 bg-transparent p-0"
             />
-            <span className="text-[13px] leading-[1.5] text-text">
+            <span className="text-[12px] leading-[1.5] text-text">
               Me entró dinero (efectivo o transferencia)
             </span>
           </label>

@@ -48,10 +48,40 @@ export function enRangoMes(fecha, start, nextStart) {
   return d >= start && d < nextStart;
 }
 
-// Entradas del mes (§6.2/I-8): devoluciones recibidas del mes + Σ monto de
-// obligaciones CREADAS POR EL USUARIO (registradoPor === uid) con
-// movimientoInicial == "entrada" en el mes. I-8: la contraparte NO cuenta el
-// movimientoInicial ajeno — solo el registrador lo registró en SU libro.
+// ── 4.3c — dinero/ítem + espejo ───────────────────────────────────────────
+
+// Chip «Dinero»/«Ítem» (derivado del documento, sin suscripciones):
+//   por_devolver → se lee de movimientoInicial (entrada=dinero, ninguno=item);
+//   por_cobrar  → de movimientoInicialTipo; ausente o valor desconocido →
+//   null (las obligaciones viejas no muestran chip).
+export function tipoDineroDe(r) {
+  if (r.sentido === "por_devolver") {
+    return r.movimientoInicial === "entrada" ? "dinero" : "item";
+  }
+  const t = r.movimientoInicialTipo;
+  return t === "dinero" || t === "item" ? t : null;
+}
+
+// ¿La obligación por_cobrar representa dinero entregado (no un ítem)?
+// Retrocompat: ausente o valor desconocido → dinero (decisión 4.3c: los
+// docs viejos sin el campo se interpretan como dinero para el espejo).
+function esDineroInicial(r) {
+  return r.movimientoInicialTipo !== "item";
+}
+
+// Espejo: SOLO la contraparte MIEMBRO bookkea el movimiento de la alta de
+// una obligación registrada por el otro (decisión 4.3c). Las externas no:
+// su uid no está en participantes, así que nunca matchean este filtro.
+function esContraparteMiembro(r, uid) {
+  return (
+    r.registradoPor !== uid && (r.participantes || []).includes(uid)
+  );
+}
+
+// Entradas del mes (§6.2/I-8 + espejo 4.3c): devoluciones recibidas del
+// mes + Σ monto de obligaciones CREADAS POR EL USUARIO (registradoPor ===
+// uid) con movimientoInicial == "entrada" en el mes + espejo: obligación
+// ajena por_cobrar con dinero → mi ENTRADA en el mes de la alta.
 export function entradasDelMes({
   obligaciones,
   entregas,
@@ -79,12 +109,23 @@ export function entradasDelMes({
         enRangoMes(r.createdAt, start, nextStart),
     )
     .reduce((a, r) => a + Number(r.monto || 0), 0);
-  return recibidas + movimientos;
+  const espejoEntrada = activas
+    .filter(
+      (r) =>
+        esContraparteMiembro(r, uid) &&
+        r.sentido === "por_cobrar" &&
+        esDineroInicial(r) &&
+        enRangoMes(r.createdAt, start, nextStart),
+    )
+    .reduce((a, r) => a + Number(r.monto || 0), 0);
+  return recibidas + movimientos + espejoEntrada;
 }
 
-// Salidas del mes (§6.2/I-8): devoluciones realizadas del mes + Σ monto de
-// obligaciones CREADAS POR EL USUARIO (registradoPor === uid) con
-// movimientoInicial == "salida" en el mes. Mismo criterio I-8.
+// Salidas del mes (§6.2/I-8 + espejo 4.3c): devoluciones realizadas del
+// mes + Σ monto de obligaciones CREADAS POR EL USUARIO con
+// movimientoInicial == "salida" en el mes + espejo: obligación ajena
+// por_devolver (la registró quien recibe) → la contraparte miembro ve
+// SIEMPRE su SALIDA en el mes de la alta, incluso si es un ítem.
 export function salidasDelMes({
   obligaciones,
   entregas,
@@ -109,5 +150,13 @@ export function salidasDelMes({
         enRangoMes(r.createdAt, start, nextStart),
     )
     .reduce((a, r) => a + Number(r.monto || 0), 0);
-  return realizadas + movimientos;
+  const espejoSalida = activas
+    .filter(
+      (r) =>
+        esContraparteMiembro(r, uid) &&
+        r.sentido === "por_devolver" &&
+        enRangoMes(r.createdAt, start, nextStart),
+    )
+    .reduce((a, r) => a + Number(r.monto || 0), 0);
+  return realizadas + movimientos + espejoSalida;
 }

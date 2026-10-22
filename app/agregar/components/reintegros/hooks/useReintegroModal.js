@@ -4,7 +4,10 @@
 // (dedup, sin el propio uid) + «Persona externa»; el groupId se DEDUCE (1
 // grupo compartido → ese; varios → picker «¿En qué grupo?»; externa → null).
 // Movimiento inicial DERIVADO: por_cobrar → salida; por_devolver → ninguno
-// por defecto con checkbox «Me entró dinero» → entrada. Monto: dígitos,
+// por defecto con checkbox «Me entró dinero» → entrada. 4.3c: movimientoInicialTipo
+// solo en por_cobrar, derivado del tick «La otra persona recibió dinero»
+// (DESMARCADO por defecto en ambos sentidos → "item"; marcado → "dinero");
+// por_devolver no lo envía (su dinero/ítem ya vive en movimientoInicial). Monto: dígitos,
 // tope 12. Resolución de nombres R-5: solo cuenta nombre de doc existente
 // (displayName o email); sin doc → null (NO se persiste uid.slice ni "").
 
@@ -25,6 +28,11 @@ export function useReintegroModal() {
 
   const [sentido, setSentido] = useState("por_cobrar");
   const [meEntroDinero, setMeEntroDinero] = useState(false);
+  // 4.3c — por_cobrar: ¿la otra persona recibió dinero (vs un ítem)?
+  // DESMARCADO por defecto (decisión 21/10/2026, en ambos sentidos): sin
+  // marca el doc guarda "item" → el espejo de la contraparte queda opt-in.
+  // Solo aplica a por_cobrar.
+  const [otroRecibioDinero, setOtroRecibioDinero] = useState(false);
 
   const [contraparteTipo, setContraparteTipo] = useState(null); // 'miembro' | 'externa'
   const [contraparteUid, setContraparteUid] = useState("");
@@ -144,6 +152,10 @@ export function useReintegroModal() {
     setMeEntroDinero((v) => !v);
   }
 
+  function toggleOtroRecibioDinero() {
+    setOtroRecibioDinero((v) => !v);
+  }
+
   function setMonto(valor) {
     setMontoDigits(valor.replace(/\D/g, "").slice(0, MAX_MONTO_DIGITOS));
   }
@@ -158,6 +170,15 @@ export function useReintegroModal() {
   // marque que ya le entró el dinero (efectivo o transferencia).
   const movimientoInicial =
     sentido === "por_cobrar" ? "salida" : meEntroDinero ? "entrada" : "ninguno";
+
+  // 4.3c: dinero/ítem SOLO en por_cobrar (en por_devolver ya está codificado
+  // en movimientoInicial). undefined en por_devolver → no se envía al alta.
+  const movimientoInicialTipo =
+    sentido === "por_cobrar"
+      ? otroRecibioDinero
+        ? "dinero"
+        : "item"
+      : undefined;
 
   // Ajuste 8: para miembros, el nombre debe estar RESUELTO (doc existente);
   // para externas, el nombre escrito. Nunca "" ni uid.slice como payload.
@@ -217,6 +238,9 @@ export function useReintegroModal() {
     movimientoInicial,
     meEntroDinero,
     toggleMeEntroDinero,
+    movimientoInicialTipo,
+    otroRecibioDinero,
+    toggleOtroRecibioDinero,
 
     contraparteNombre,
     groupId,

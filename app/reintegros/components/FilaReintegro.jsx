@@ -10,11 +10,14 @@
 // chips «Editado: $300 → $200 · 21/10» (evento `edicion`, último por
 // obligación y por entrega). Sin `ediciones`/callbacks (pestaña Saldados)
 // no se muestra nada de edición.
+// 4.3c (21/10/2026): chip «Dinero»/«Ítem» derivado del documento con
+// tipoDineroDe (sin suscripciones): se ve en Activos y en Saldados. Si la
+// obligación por_cobrar no trae movimientoInicialTipo (vieja) → sin chip.
 
 "use client";
 
 import { useAuth } from "@/lib/AuthContext";
-import { estadoDe, saldoDe } from "../helpers/modelo";
+import { estadoDe, saldoDe, tipoDineroDe } from "../helpers/modelo";
 
 const ETIQUETA_ESTADO = {
   pendiente: "Pendiente",
@@ -43,6 +46,17 @@ function ChipEdicion({ ev }) {
     <span className="mt-[4px] inline-block rounded-[8px] border border-accent/30 bg-accent/12 px-2 py-[2px] text-[10px] font-medium text-accent-light">
       Editado: {money(ev.montoAnterior)} → {money(ev.montoNuevo)} ·{" "}
       {fechaDiaMes(ev.createdAt)}
+    </span>
+  );
+}
+
+// 4.3c — chip discreto Dinero/Ítem (discreto, solo lectura del doc).
+function ChipTipoDinero({ r }) {
+  const tipo = tipoDineroDe(r);
+  if (!tipo) return null;
+  return (
+    <span className="mt-[4px] inline-block rounded-[8px] border border-border bg-white/4 px-2 py-[2px] text-[10px] font-medium text-text-muted">
+      {tipo === "dinero" ? "Dinero" : "Ítem"}
     </span>
   );
 }
@@ -94,6 +108,7 @@ export default function FilaReintegro({
             Saldado {money(devuelto)} · Pendiente {money(saldo)}
           </p>
           <ChipEdicion ev={evObl} />
+          <ChipTipoDinero r={r} />
         </div>
 
         <div className="flex-shrink-0 text-right">
