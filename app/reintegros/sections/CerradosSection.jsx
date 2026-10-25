@@ -4,6 +4,10 @@
 // (onPagar no se pasa); el historial de entregas sigue visible (done:
 // «historial visible»). El total de cada acordeón es el MONTO de la
 // obligación (comportamiento de 4.2 sobre la pestaña saldada).
+// 4.3-bis: recibe SOLO onAccionObligacion — FilaReintegro ofrece «Eliminar»
+// (menú ⋮) únicamente en PERDONADAS del registrador (D-9 opción B);
+// liquidadas sin menú y pagos sin acciones (passthrough habilita todo el
+// menú de pagos en Activos, acá no se pasa).
 
 "use client";
 
@@ -18,6 +22,7 @@ export default function CerradosSection({
   onTogglePrestamos,
   openDeudas,
   onToggleDeudas,
+  onAccionObligacion,
 }) {
   const totalPrestamos = prestamos.reduce((a, r) => a + Number(r.monto || 0), 0);
   const totalDeudas = deudas.reduce((a, r) => a + Number(r.monto || 0), 0);
@@ -43,7 +48,12 @@ export default function CerradosSection({
           </p>
         ) : (
           prestamos.map((r) => (
-            <FilaReintegro key={r.id} r={r} entregas={entregaDe(r)} />
+            <FilaReintegro
+              key={r.id}
+              r={r}
+              entregas={entregaDe(r)}
+              onAccionObligacion={onAccionObligacion}
+            />
           ))
         )}
       </Acordeon>
@@ -63,7 +73,12 @@ export default function CerradosSection({
           </p>
         ) : (
           deudas.map((r) => (
-            <FilaReintegro key={r.id} r={r} entregas={entregaDe(r)} />
+            <FilaReintegro
+              key={r.id}
+              r={r}
+              entregas={entregaDe(r)}
+              onAccionObligacion={onAccionObligacion}
+            />
           ))
         )}
       </Acordeon>

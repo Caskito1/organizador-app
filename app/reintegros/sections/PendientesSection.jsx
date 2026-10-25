@@ -4,7 +4,9 @@
 // El total de cada acordeón es el SALDO PENDIENTE (comportamiento de 4.2
 // sobre la pestaña activa). 4.3b: solo hace passthrough de la edición de
 // monto (ediciones + callbacks) — CerradosSection no los pasa, por lo que
-// en Saldados no hay edición ni chips.
+// en Saldados no hay edición ni chips. 4.3-bis: passthrough del menú ⋮
+// (onAccionObligacion / onAccionEntrega → ConfirmarAccionModal en page;
+// onMenuAbrir / menuActivo → MenuAccionesSheet en page, 24/10/2026).
 
 "use client";
 
@@ -24,6 +26,10 @@ export default function PendientesSection({
   ediciones,
   onEditarObligacion,
   onEditarEntrega,
+  onAccionObligacion,
+  onAccionEntrega,
+  onMenuAbrir,
+  menuActivo,
 }) {
   const totalPrestamos = prestamos.reduce((a, r) => a + saldoDe(r), 0);
   const totalDeudas = deudas.reduce((a, r) => a + saldoDe(r), 0);
@@ -57,6 +63,10 @@ export default function PendientesSection({
               ediciones={ediciones}
               onEditarObligacion={onEditarObligacion}
               onEditarEntrega={onEditarEntrega}
+              onAccionObligacion={onAccionObligacion}
+              onAccionEntrega={onAccionEntrega}
+              onMenuAbrir={onMenuAbrir}
+              menuActivo={menuActivo}
             />
           ))
         )}
@@ -85,6 +95,10 @@ export default function PendientesSection({
               ediciones={ediciones}
               onEditarObligacion={onEditarObligacion}
               onEditarEntrega={onEditarEntrega}
+              onAccionObligacion={onAccionObligacion}
+              onAccionEntrega={onAccionEntrega}
+              onMenuAbrir={onMenuAbrir}
+              menuActivo={menuActivo}
             />
           ))
         )}

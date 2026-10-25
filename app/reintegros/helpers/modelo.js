@@ -135,9 +135,15 @@ export function salidasDelMes({
 }) {
   const activas = obligaciones.filter((r) => !("eliminacion" in r));
   const entregasActivas = entregas.filter((e) => !("eliminacion" in e));
+  // 4.3-bis: solo suman pagos cuya obligación siga activa — espejo de
+  // recibidas en entradasDelMes. Obligación eliminada ⇒ la entrega
+  // conservada (I-4) deja de contar en ambos libros; condonadas y
+  // liquidadas (sin constancia de eliminación) siguen contando.
+  const activasIds = new Set(activas.map((r) => r.id));
   const realizadas = entregasActivas
     .filter(
       (d) =>
+        activasIds.has(d.reintegroId) &&
         d.realizadoPorUid === uid &&
         enRangoMes(d.fechaPago, start, nextStart),
     )

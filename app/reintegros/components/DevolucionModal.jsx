@@ -315,6 +315,11 @@ export default function DevolucionModal({ r, modo, onClose }) {
             El importe supera el saldo pendiente de {money(saldo)}.
           </p>
         )}
+        {monto > 0 && monto === saldo && (
+          <p className="mb-3 text-[11px] leading-[1.5] text-text-muted">
+            Con este pago la deuda queda saldada y ya no podrá editarse.
+          </p>
+        )}
 
         {/* FECHA DEL PAGO — editable (default hoy; H-5) */}
         <div className="mb-4 mt-3 flex flex-col gap-[6px]">

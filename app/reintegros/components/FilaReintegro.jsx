@@ -13,6 +13,17 @@
 // 4.3c (21/10/2026): chip «Dinero»/«Ítem» derivado del documento con
 // tipoDineroDe (sin suscripciones): se ve en Activos y en Saldados. Si la
 // obligación por_cobrar no trae movimientoInicialTipo (vieja) → sin chip.
+// 4.3-bis (23/10/2026): las acciones de obligación y de cada pago viven en
+// el menú ⋮ («Acciones», área táctil 30×30 px, hoja `MenuAccionesSheet`
+// montada en page.jsx — fuera de los acordeones y bajo el BottomNav) —
+// los botones chicos inline de 4.3b se retiraron
+// para no duplicar entradas. Menú por permisos/estado: abierta → Editar
+// monto (registrador), Perdonar deuda (acreedor), Eliminar (registrador,
+// rojo, al final); CERRADAS (liquidada/perdonada) → sin menú (regla
+// estricta 24/10/2026; D-9 opción B RETIRADA); pagos solo en Activos →
+// Editar monto → Eliminar (ambas partes). Sin acciones → sin ícono. Sello
+// de estado «Condonada» → «Perdonada» (etiqueta de UI; el modelo sigue en
+// `condonacion`).
 
 "use client";
 
@@ -23,7 +34,7 @@ const ETIQUETA_ESTADO = {
   pendiente: "Pendiente",
   parcial: "Parcial",
   liquidado: "Liquidada",
-  condonado: "Condonada",
+  condonado: "Perdonada",
 };
 
 function money(n) {
@@ -61,6 +72,32 @@ function ChipTipoDinero({ r }) {
   );
 }
 
+// 4.3-bis — disparador del menú ⋮ («Acciones», área táctil 40×40 px).
+function BotonMenu({ etiqueta, abierto, onAbrir }) {
+  return (
+    <button
+      type="button"
+      aria-label={etiqueta}
+      aria-haspopup="menu"
+      aria-expanded={abierto}
+      onClick={onAbrir}
+      className="inline-flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-[10px] text-text-muted/60 transition-colors hover:bg-white/6 hover:text-text-muted"
+    >
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="5" r="2" />
+        <circle cx="12" cy="12" r="2" />
+        <circle cx="12" cy="19" r="2" />
+      </svg>
+    </button>
+  );
+}
+
 export default function FilaReintegro({
   r,
   entregas,
@@ -68,6 +105,10 @@ export default function FilaReintegro({
   ediciones,
   onEditarObligacion,
   onEditarEntrega,
+  onAccionObligacion,
+  onAccionEntrega,
+  onMenuAbrir,
+  menuActivo = null,
 }) {
   const { user } = useAuth();
   const uid = user?.uid ?? null;
@@ -87,12 +128,70 @@ export default function FilaReintegro({
 
   const abierta = (estado === "pendiente" || estado === "parcial") && saldo > 0;
   const conAcciones = !!onPagar && abierta;
-  // Edición: botones solo en Activos (la sección pasa los callbacks) y,
-  // para el monto de la obligación, solo el registrador (D-8(ii) en UI).
+  // Edición (4.3b): callbacks solo en Activos; chips de edición igual.
   const conEdicionPago = conAcciones && !!onEditarEntrega;
-  const conEdicionMonto =
-    conAcciones && !!onEditarObligacion && r.registradoPor === uid;
   const evObl = ediciones?.obligacion ?? null;
+
+  // 4.3-bis — permisos de la fila (mismas reglas que los helpers).
+  const esRegistrador = r.registradoPor === uid;
+  const esAcreedor =
+    r.contraparteUid == null
+      ? esRegistrador
+      : esRegistrador
+        ? r.sentido === "por_cobrar"
+        : (r.participantes || []).includes(uid) && r.sentido === "por_devolver";
+
+  // Acciones de la OBLIGACIÓN por permisos y estado (4.3-bis).
+  const accionesObl = [];
+  if (onAccionObligacion) {
+    if (abierta) {
+      if (esRegistrador && onEditarObligacion) {
+        accionesObl.push({
+          id: "editar",
+          label: "Editar monto",
+          onSelect: () => onEditarObligacion(r),
+        });
+      }
+      if (esAcreedor) {
+        accionesObl.push({
+          id: "perdonar",
+          label: "Perdonar deuda",
+          onSelect: () => onAccionObligacion(r, "condonar"),
+        });
+      }
+      if (esRegistrador) {
+        accionesObl.push({
+          id: "eliminar",
+          label: "Eliminar",
+          danger: true,
+          onSelect: () => onAccionObligacion(r, "eliminar-obligacion"),
+        });
+      }
+    }
+    // CERRADAS (liquidada/perdonada) sin menú: regla estricta 24/10/2026.
+    // D-9 opción B (perdonada → Eliminar) quedó RETIRADA.
+  }
+
+  // Acciones de cada PAGO: solo en Activos (abierta con callbacks).
+  function accionesDe(e) {
+    const items = [];
+    if (conAcciones && onEditarEntrega) {
+      items.push({
+        id: "editar",
+        label: "Editar monto",
+        onSelect: () => onEditarEntrega(r, e),
+      });
+    }
+    if (conAcciones && onAccionEntrega) {
+      items.push({
+        id: "eliminar",
+        label: "Eliminar",
+        danger: true,
+        onSelect: () => onAccionEntrega(r, e, "eliminar-pago"),
+      });
+    }
+    return items;
+  }
 
   return (
     <div className="border-b border-[rgba(138,100,255,0.1)] py-[10px]">
@@ -111,25 +210,30 @@ export default function FilaReintegro({
           <ChipTipoDinero r={r} />
         </div>
 
-        <div className="flex-shrink-0 text-right">
-          <p className="font-sora text-[14px] font-bold text-text">
-            {money(monto)}
-          </p>
-          <p className="mt-[2px] text-[11px] text-text-muted">
-            {ETIQUETA_ESTADO[estado]}
-          </p>
-          {/* Editar monto de la obligación — solo registrador (D-8(ii)) y
-              en Activos; chico, junto al monto general (ajuste UX
-              21/10/2026). Con devuelto > 0 el modal explica el bloqueo. */}
-          {conEdicionMonto && (
-            <button
-              type="button"
-              onClick={() => onEditarObligacion(r)}
-              className="mt-[5px] cursor-pointer rounded-[8px] border border-border bg-white/4 px-2 py-[2px] text-[10px] font-semibold text-text-muted transition-all hover:bg-white/8 hover:text-text"
-            >
-              Editar monto
-            </button>
-          )}
+        <div className="flex-shrink-0">
+          {/* Estructura del header del acordeón: col monto+texto | botón. */}
+          <div className="flex items-center gap-[10px]">
+            <div className="flex flex-col items-end">
+              <p className="font-sora text-[14px] font-bold text-text">
+                {money(monto)}
+              </p>
+              <p className="mt-[2px] text-[11px] text-text-muted">
+                {ETIQUETA_ESTADO[estado]}
+              </p>
+            </div>
+            {/* Menú ⋮ de la obligación (4.3-bis): columna propia. */}
+            {accionesObl.length > 0 && (
+              <BotonMenu
+                etiqueta="Acciones"
+                abierto={
+                  !!menuActivo && !menuActivo.entrega && menuActivo.r.id === r.id
+                }
+                onAbrir={() =>
+                  onMenuAbrir?.({ r, entrega: null, items: accionesObl })
+                }
+              />
+            )}
+          </div>
         </div>
       </div>
 
@@ -146,18 +250,21 @@ export default function FilaReintegro({
                   {fechaCorta(e.fechaPago)} · {e.realizadoPorNombre}
                   {e.detalle ? ` · ${e.detalle}` : ""}
                 </span>
-                <span className="flex flex-shrink-0 items-center gap-2">
+                <span className="flex flex-shrink-0 items-center gap-[10px]">
                   <span className="font-sora font-semibold text-text">
                     {money(e.monto)}
                   </span>
-                  {conEdicionPago && (
-                    <button
-                      type="button"
-                      onClick={() => onEditarEntrega(r, e)}
-                      className="cursor-pointer rounded-[8px] border border-border bg-white/4 px-2 py-[2px] text-[10px] font-semibold text-text-muted transition-all hover:bg-white/8 hover:text-text"
-                    >
-                      Editar
-                    </button>
+                  {/* Menú ⋮ del pago (4.3-bis): solo si hay acciones. */}
+                  {accionesDe(e).length > 0 && (
+                    <BotonMenu
+                      etiqueta="Acciones"
+                      abierto={
+                        !!menuActivo && menuActivo.entrega?.id === e.id
+                      }
+                      onAbrir={() =>
+                        onMenuAbrir?.({ r, entrega: e, items: accionesDe(e) })
+                      }
+                    />
                   )}
                 </span>
               </div>

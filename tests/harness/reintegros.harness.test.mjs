@@ -50,11 +50,42 @@
 //   +  (H25)  espejo por_devolver sin tick (ítem): contraparte ve salida (siempre)
 //   +  (H26)  externa / no participante: sin espejo
 //   +  (H27)  retrocompat: por_cobrar vieja sin movimientoInicialTipo → dinero
-//   +  (H28)  movimientoInicialTipo inválido → espejo como dinero, sin chip
+//   +  (H28)  movimientoInicialTipo inválido: espejo como dinero, sin chip
 //   +  (H29)  espejo con monto editado vía editarObligacion
 //   +  (H30)  tipoDineroDe (chip Dinero/Ítem): derivación por sentidos
 //   +  (H31)  alta con movimientoInicialTipo: dinero/item, ausente y rechazos
 // H22–H31: espejo, chip y alta (4.3c, 21/10/2026).
+//   +  (H32)  eliminar entrega (caso 11): atómica, recálculo sobre leído,
+//             reabre parcial→pendiente, evento eliminacion/entrega, D-7
+//   +  (H33)  doble eliminación de entrega → ELIMINADA sin escritura
+//   +  (H34)  eliminar obligación (caso 12): lógica, conserva entregas +
+//             constancia, estadoDe "eliminado", fuera de activas (D-5)
+//   +  (H35)  perdonar (caso 13, C1): acreedor sí; deudor/tercero/
+//             no-participante NO_ACREEDOR; sin entrega/devuelto (I-12);
+//             espejo por_devolver; externa solo registrador
+//   +  (H36)  inmutable (caso 14): eliminada — editar/condonar/re-eliminar
+//             rechazados, sin escritura
+//   +  (H37)  cerradas: eliminar condonada/liquidada ⇒ error, sin
+//             escritura (D-9 opción B RETIRADA 24/10/2026); re-registro
+//             estándar (4.2+4.3) liquida el nuevo
+//   +  (H38)  permisos: contraparte NO_REGISTRADOR; forja directa de
+//             constancias (deudor/no-participante) rechazada por reglas
+//   +  (H39)  concurrencia: eliminar pago vs pago nuevo → invariantes
+//             [0,monto] + D-7, resultados documentados por orden
+//   +  (H40)  doble toque: perdonar/eliminar dos veces → segundo
+//             rechazado, un solo evento de cada tipo; eliminar la
+//             perdonada rechazada (D-9 opción B retirada)
+//   +  (H41)  «Dinero del mes»: eliminar obligación pierde su
+//             movimientoInicial del registrador y el espejo de la
+//             contraparte; entregas conservadas dejan de sumar
+//   +  (H42)  «Dinero del mes»: eliminar pago quita esa entrada/salida de
+//             su mes (fechaPago); otros meses intactos
+//   +  (H43)  «Dinero del mes»/stock: perdonar mantiene pagos en
+//             entradas, cancela el pendiente, sin caja nueva (I-12)
+// H32–H43: eliminar/condonar (4.3-bis, 23/10/2026). NOTA: el «reabre si
+// liquidaba» del caso 11 no es alcanzable vía helper — la guarda LIQUIDADA
+// de cliente (decisión 4.3-bis) impide eliminar pagos de una liquidada; se
+// prueba reabre parcial→pendiente.
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -90,6 +121,9 @@ import {
 } from "../../app/agregar/components/reintegros/helpers/submitDevolucion.js";
 import { editarEntrega } from "../../app/agregar/components/reintegros/helpers/editarEntrega.js";
 import { editarObligacion } from "../../app/agregar/components/reintegros/helpers/editarObligacion.js";
+import { eliminarEntrega } from "../../app/agregar/components/reintegros/helpers/eliminarEntrega.js";
+import { eliminarObligacion } from "../../app/agregar/components/reintegros/helpers/eliminarObligacion.js";
+import { condonar } from "../../app/agregar/components/reintegros/helpers/condonar.js";
 import {
   sentidoDelViewer,
   saldoDe,
@@ -1991,4 +2025,629 @@ test("H31 — submitReintegro con movimientoInicialTipo: dinero/item en por_cobr
       return true;
     },
   );
+});
+
+// ═══ 4.3-bis — Eliminar/condonar (H32–H43) ═══
+
+async function readEliminacionEventos(rid, asUid = A) {
+  const snap = await getDocs(
+    query(
+      collection(dbAs(asUid), "reintegros", rid, "eventos"),
+      where("tipo", "==", "eliminacion"),
+    ),
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+async function readCondonacionEventos(rid, asUid = A) {
+  const snap = await getDocs(
+    query(
+      collection(dbAs(asUid), "reintegros", rid, "eventos"),
+      where("tipo", "==", "condonacion"),
+    ),
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+// ═══ Caso 11 — eliminar entrega: atómica, recálculo, reabre, evento ═══
+
+test("H32 — eliminar entrega (caso 11): atómica, recálculo sobre leído, reabre, evento, D-7", async () => {
+  // (a) atomicidad + recálculo sobre el estado leído + evento
+  const rid = "h32_elim";
+  await seedObl(rid, baseObl({ monto: 1000, devuelto: 700 }));
+  await seedEntrega("h32_e1", baseEntrega(rid, { monto: 300 }));
+  await seedEntrega("h32_e2", baseEntrega(rid, { monto: 400 }));
+
+  await eliminarEntrega({
+    db: dbAs(A),
+    uid: A,
+    did: "h32_e2",
+    motivo: "carga errónea",
+  });
+
+  const obl = await readObl(rid, A);
+  assert.equal(obl.devuelto, 300, "devuelto = leído(700) − monto(400)");
+  const ent = (await readEntregas(rid, A)).find((e) => e.id === "h32_e2");
+  assert.ok("eliminacion" in ent, "constancia presente");
+  assert.equal(ent.eliminacion.eliminadaPor, A);
+  assert.equal(ent.eliminacion.motivo, "carga errónea");
+  assert.ok(ent.eliminacion.createdAt instanceof Timestamp, "createdAt de servidor");
+  assert.equal(ent.monto, 400, "doc original conservado (I-4)");
+  const evs = (await readEliminacionEventos(rid, A)).filter(
+    (e) => e.entidad === "entrega",
+  );
+  assert.equal(evs.length, 1, "un solo evento eliminacion/entrega");
+  assert.equal(evs[0].entregaId, "h32_e2");
+  assert.equal(evs[0].montoEliminado, 400);
+  assert.equal(evs[0].registradoPor, A);
+  const restantes = (await readEntregas(rid, A)).filter(
+    (e) => !("eliminacion" in e),
+  );
+  assert.ok(
+    assertDevueltoConsistente(obl, restantes),
+    "D-7 ok tras la eliminación",
+  );
+
+  // (b) reabre: devuelto 300 → 0 ⇒ estado vuelve a «pendiente» (Activos).
+  // NOTA: el «reabre si liquidaba» del caso 11 no es alcanzable vía helper
+  // — la guarda LIQUIDADA de cliente (decisión 4.3-bis) lo impide.
+  const rid2 = "h32_reabre";
+  await seedObl(rid2, baseObl({ monto: 500, devuelto: 300 }));
+  await seedEntrega("h32_re_e1", baseEntrega(rid2, { monto: 300 }));
+  assert.equal(estadoDe(await readObl(rid2, A)), "parcial");
+  await eliminarEntrega({ db: dbAs(A), uid: A, did: "h32_re_e1" });
+  const re = await readObl(rid2, A);
+  assert.equal(re.devuelto, 0);
+  assert.equal(estadoDe(re), "pendiente", "reabre a pendiente");
+});
+
+// ═══ Caso 11b — doble eliminación de entrega ═══
+
+test("H33 — doble eliminación de entrega: segundo rechazado, sin escritura", async () => {
+  const rid = "h33_dbl";
+  await seedObl(rid, baseObl({ monto: 1000, devuelto: 300 }));
+  await seedEntrega("h33_e1", baseEntrega(rid, { monto: 300 }));
+
+  await eliminarEntrega({ db: dbAs(A), uid: A, did: "h33_e1" });
+  const dev1 = (await readObl(rid, A)).devuelto;
+  assert.equal(dev1, 0);
+
+  await assert.rejects(
+    () => eliminarEntrega({ db: dbAs(B), uid: B, did: "h33_e1" }),
+    (err) => {
+      assert.ok(err instanceof ReintegroError);
+      assert.equal(err.code, "ELIMINADA");
+      return true;
+    },
+  );
+  assert.equal((await readObl(rid, A)).devuelto, dev1, "sin escritura");
+  assert.equal((await readEliminacionEventos(rid, A)).length, 1, "un solo evento");
+});
+
+// ═══ Caso 12 — eliminar obligación: lógica, conserva entregas ═══
+
+test("H34 — eliminar obligación (caso 12): lógica, conserva entregas, estado derivado, fuera de activas", async () => {
+  const rid = "h34_obl";
+  await seedObl(rid, baseObl({ monto: 1000, devuelto: 400 }));
+  await seedEntrega("h34_e1", baseEntrega(rid, { monto: 400 }));
+
+  await eliminarObligacion({
+    db: dbAs(A),
+    uid: A,
+    rid,
+    motivo: "cargada de más",
+  });
+
+  const obl = await readObl(rid, A);
+  assert.ok("eliminacion" in obl);
+  assert.equal(obl.eliminacion.eliminadaPor, A);
+  assert.equal(obl.eliminacion.motivo, "cargada de más");
+  assert.ok(obl.eliminacion.createdAt instanceof Timestamp);
+  assert.equal(obl.monto, 1000, "monto intacto");
+  assert.equal(obl.devuelto, 400, "devuelto intacto");
+  assert.equal(estadoDe(obl), "eliminado");
+
+  // entregas conservadas sin borrado en cascada (DC-7 / I-10)
+  const ents = await readEntregas(rid, A);
+  assert.equal(ents.length, 1, "entrega en BD");
+  assert.ok(!("eliminacion" in ents[0]), "entrega NO eliminada en cascada");
+
+  const evs = (await readEliminacionEventos(rid, A)).filter(
+    (e) => e.entidad === "obligacion",
+  );
+  assert.equal(evs.length, 1);
+  assert.equal(evs[0].motivo, "cargada de más");
+  assert.equal(evs[0].monto, 1000);
+
+  // filtro cliente (D-5): campo presente ⇒ fuera de activas
+  const activas = [obl].filter((r) => !("eliminacion" in r));
+  assert.equal(activas.length, 0, "fuera de activas");
+});
+
+// ═══ Caso 13 — perdonar: C1, sin caja (I-12) ═══
+
+test("H35 — perdonar (caso 13, C1): acreedor sí, deudor/tercero NO_ACREEDOR, sin caja (I-12)", async () => {
+  // (a) A registró por_cobrar ⇒ A acreedor, B deudor
+  const rid1 = "h35_ok";
+  await seedObl(rid1, baseObl({ monto: 1000, devuelto: 400 }));
+  await seedEntrega(
+    "h35_e1",
+    baseEntrega(rid1, {
+      monto: 400,
+      realizadoPorUid: B,
+      realizadoPorNombre: "Bob",
+    }),
+  );
+
+  await assert.rejects(
+    () => condonar({ db: dbAs(B), uid: B, rid: rid1 }),
+    (err) => {
+      assert.ok(err instanceof ReintegroError);
+      assert.equal(err.code, "NO_ACREEDOR");
+      return true;
+    },
+  );
+  // C (tercero, no participante): las reglas rechazan el tx.get de lectura
+  // con permission-denied antes de que corra el guard de cliente.
+  await assert.rejects(
+    () => condonar({ db: dbAs(C), uid: C, rid: rid1 }),
+    (err) => {
+      assert.equal(err.code, "permission-denied");
+      return true;
+    },
+  );
+  assert.ok(
+    !("condonacion" in (await readObl(rid1, A))),
+    "sin escritura de los rechazos",
+  );
+
+  await condonar({ db: dbAs(A), uid: A, rid: rid1, motivo: "no puede pagar" });
+  const obl = await readObl(rid1, A);
+  assert.ok("condonacion" in obl);
+  assert.equal(obl.condonacion.condonadaPor, A);
+  assert.equal(obl.condonacion.motivo, "no puede pagar");
+  assert.ok(obl.condonacion.createdAt instanceof Timestamp);
+  assert.equal(obl.devuelto, 400, "devuelto intacto (I-12)");
+  assert.equal(estadoDe(obl), "condonado");
+  const ents = await readEntregas(rid1, A);
+  assert.equal(ents.length, 1, "sin entrega nueva (I-12)");
+  assert.ok(!("eliminacion" in ents[0]), "pago existente se mantiene");
+  assert.equal((await readCondonacionEventos(rid1, A)).length, 1);
+
+  // (b) espejo C1: A registró por_devolver ⇒ B es el acreedor en espejo
+  const rid2 = "h35_espejo";
+  await seedObl(rid2, baseObl({ sentido: "por_devolver", monto: 800 }));
+  await assert.rejects(
+    () => condonar({ db: dbAs(A), uid: A, rid: rid2 }),
+    (err) => {
+      assert.equal(err.code, "NO_ACREEDOR");
+      return true;
+    },
+  );
+  await condonar({ db: dbAs(B), uid: B, rid: rid2 });
+  assert.ok("condonacion" in (await readObl(rid2, B)));
+
+  // (c) externa: solo el registrador
+  const rid3 = "h35_ext";
+  await seedObl(rid3, externalObl({ sentido: "por_cobrar" }));
+  await condonar({ db: dbAs(A), uid: A, rid: rid3 });
+  assert.ok("condonacion" in (await readObl(rid3, A)));
+});
+
+// ═══ Caso 14 — obligación eliminada inmutable ═══
+
+test("H36 — obligación eliminada inmutable (caso 14): editar/condonar/re-eliminar rechazados", async () => {
+  const rid = "h36_inm";
+  await seedObl(rid, baseObl({ monto: 1000, devuelto: 0 }));
+  await eliminarObligacion({ db: dbAs(A), uid: A, rid });
+
+  await assert.rejects(
+    () => editarObligacion({ db: dbAs(A), uid: A, rid, monto: 900 }),
+    (err) => {
+      assert.equal(err.code, "ELIMINADA");
+      return true;
+    },
+  );
+  await assert.rejects(
+    () => condonar({ db: dbAs(A), uid: A, rid }),
+    (err) => {
+      assert.equal(err.code, "ELIMINADA");
+      return true;
+    },
+  );
+  await assert.rejects(
+    () => eliminarObligacion({ db: dbAs(A), uid: A, rid }),
+    (err) => {
+      assert.equal(err.code, "ELIMINADA");
+      return true;
+    },
+  );
+  const obl = await readObl(rid, A);
+  assert.equal(obl.monto, 1000, "sin escritura");
+  assert.equal((await readEliminacionEventos(rid, A)).length, 1, "un solo evento");
+
+  // entrega sobre obligación eliminada → ELIMINADA (guarda de cliente)
+  await seedEntrega("h36_e1", baseEntrega(rid, { monto: 300 }));
+  await assert.rejects(
+    () => eliminarEntrega({ db: dbAs(A), uid: A, did: "h36_e1" }),
+    (err) => {
+      assert.equal(err.code, "ELIMINADA");
+      return true;
+    },
+  );
+});
+
+// ═══ Cerradas — eliminar condonada/liquidada rechazado + re-registro estándar ═══
+
+test("H37 — cerradas: eliminar condonada/liquidada ⇒ error, sin escritura (D-9 opción B retirada 24/10/2026)", async () => {
+  // (a) perdonada: CONDONADA, sin escritura
+  const ridViejo = "h37_viejo";
+  await seedObl(ridViejo, baseObl({ monto: 1000, devuelto: 0 }));
+  await condonar({ db: dbAs(A), uid: A, rid: ridViejo, motivo: "no paga" });
+  await assert.rejects(
+    () =>
+      eliminarObligacion({
+        db: dbAs(A),
+        uid: A,
+        rid: ridViejo,
+        motivo: "Pago posterior a condonación",
+      }),
+    (err) => {
+      assert.ok(err instanceof ReintegroError);
+      assert.equal(err.code, "CONDONADA");
+      return true;
+    },
+  );
+
+  const viejo = await readObl(ridViejo, A);
+  assert.ok("condonacion" in viejo, "constancia de condonación intacta");
+  assert.ok(!("eliminacion" in viejo), "sin escritura: sin constancia de eliminación");
+  assert.equal(estadoDe(viejo), "condonado", "sigue condonada, sin cambios");
+  const evs = await readEventos(ridViejo, A);
+  assert.equal(evs.filter((e) => e.tipo === "condonacion").length, 1);
+  assert.equal(evs.filter((e) => e.tipo === "eliminacion").length, 0, "sin evento de eliminación");
+
+  // (b) liquidada: misma guarda (LIQUIDADA), sin escritura
+  const ridLiq = "h37_liq";
+  await seedObl(ridLiq, baseObl({ monto: 1000, devuelto: 1000 }));
+  await seedEntrega("h37_liq_e1", baseEntrega(ridLiq, { monto: 1000 }));
+  await assert.rejects(
+    () => eliminarObligacion({ db: dbAs(A), uid: A, rid: ridLiq }),
+    (err) => {
+      assert.ok(err instanceof ReintegroError);
+      assert.equal(err.code, "LIQUIDADA");
+      return true;
+    },
+  );
+  assert.ok(!("eliminacion" in (await readObl(ridLiq, A))), "sin escritura");
+
+  // Re-registro estándar (alta 4.2 + devolución 4.3): la app no automatiza
+  // la reconstrucción (§4.3.2 de la propuesta) — camino de un pago
+  // posterior a la condonación.
+  const { rid: ridNuevo } = await submitReintegro({
+    db: dbAs(A),
+    uid: A,
+    uidNombre: "Alice",
+    sentido: "por_cobrar",
+    monto: 1000,
+    contraparteUid: B,
+    contraparteNombre: "Bob",
+    groupId: null,
+    concepto: "Alquiler octubre",
+    detalle: "Pago posterior a condonación",
+    movimientoInicial: "ninguno",
+  });
+  await submitDevolucion({
+    db: dbAs(B),
+    uid: B,
+    uidNombre: "Bob",
+    rid: ridNuevo,
+    monto: 1000,
+    realizadoPorUid: B,
+    realizadoPorNombre: "Bob",
+    fechaPago: Timestamp.now(),
+    detalle: null,
+  });
+  const nuevo = await readObl(ridNuevo, B);
+  assert.equal(nuevo.devuelto, 1000);
+  assert.equal(estadoDe(nuevo), "liquidado");
+});
+
+// ═══ Permisos extra — contraparte y forja directa ═══
+
+test("H38 — permisos: contraparte no elimina obligación; forja directa de constancias rechazada por reglas", async () => {
+  const rid = "h38_perms";
+  await seedObl(rid, baseObl({ monto: 600 }));
+
+  // contraparte B (participante, no registrador): NO_REGISTRADOR de cliente
+  await assert.rejects(
+    () => eliminarObligacion({ db: dbAs(B), uid: B, rid }),
+    (err) => {
+      assert.ok(err instanceof ReintegroError);
+      assert.equal(err.code, "NO_REGISTRADOR");
+      return true;
+    },
+  );
+
+  // forja directa de constancias (server-side, ramas (e)/(f)):
+  await assertFails(
+    updateDoc(doc(dbAs(B), "reintegros", rid), {
+      condonacion: { condonadaPor: B, createdAt: Timestamp.now(), motivo: null },
+    }),
+  );
+  await assertFails(
+    updateDoc(doc(dbAs(B), "reintegros", rid), {
+      eliminacion: { eliminadaPor: B, createdAt: Timestamp.now(), motivo: null },
+    }),
+  );
+  // no-participante C directo
+  await assertFails(
+    updateDoc(doc(dbAs(C), "reintegros", rid), {
+      condonacion: { condonadaPor: C, createdAt: Timestamp.now(), motivo: null },
+    }),
+  );
+  const obl = await readObl(rid, A);
+  assert.ok(!("condonacion" in obl), "sin constancia forjada");
+  assert.ok(!("eliminacion" in obl), "sin constancia forjada");
+});
+
+// ═══ Concurrencia — eliminar pago vs pago nuevo ═══
+
+test("H39 — concurrencia: eliminar pago vs pago nuevo → invariantes [0,monto] + D-7", async () => {
+  const rid = "h39_conc";
+  await seedObl(rid, baseObl({ monto: 1000, devuelto: 600 }));
+  await seedEntrega("h39_e1", baseEntrega(rid, { monto: 300 }));
+  await seedEntrega(
+    "h39_e2",
+    baseEntrega(rid, {
+      monto: 300,
+      realizadoPorUid: B,
+      realizadoPorNombre: "Bob",
+    }),
+  );
+
+  // Saldo real 400 < pago 500: gana el orden que sea — nunca sobregiro.
+  const resultados = await Promise.allSettled([
+    eliminarEntrega({ db: dbAs(A), uid: A, did: "h39_e1" }),
+    submitDevolucion({
+      db: dbAs(B),
+      uid: B,
+      uidNombre: "Bob",
+      rid,
+      monto: 500,
+      realizadoPorUid: B,
+      realizadoPorNombre: "Bob",
+      fechaPago: Timestamp.now(),
+      detalle: null,
+    }),
+  ]);
+  assert.equal(
+    resultados[0].status,
+    "fulfilled",
+    "la eliminación siempre es válida",
+  );
+  const obl = await readObl(rid, A);
+  assert.ok(
+    obl.devuelto >= 0 && obl.devuelto <= obl.monto,
+    `devuelto en rango: ${obl.devuelto}`,
+  );
+  const activas = (await readEntregas(rid, A)).filter(
+    (e) => !("eliminacion" in e),
+  );
+  assert.ok(assertDevueltoConsistente(obl, activas), "D-7 ok tras la carrera");
+  if (resultados[1].status === "fulfilled") {
+    assert.equal(obl.devuelto, 800, "eliminó primero y el pago de 500 cupo");
+  } else {
+    assert.equal(resultados[1].reason.code, "SALDO_INSUFICIENTE");
+    assert.equal(obl.devuelto, 300, "el pago se rechazó y la eliminación avanzó");
+  }
+});
+
+// ═══ Doble toque ═══
+
+test("H40 — doble toque: perdonar/eliminar dos veces → segundo rechazado, un solo evento de cada tipo", async () => {
+  // perdonar dos veces + eliminar la perdonada (rechazada: D-9B retirada)
+  const rid = "h40_doble";
+  await seedObl(rid, baseObl({ monto: 700 }));
+
+  await condonar({ db: dbAs(A), uid: A, rid });
+  await assert.rejects(
+    () => condonar({ db: dbAs(A), uid: A, rid }),
+    (err) => {
+      assert.equal(err.code, "CONDONADA");
+      return true;
+    },
+  );
+  await assert.rejects(
+    () => eliminarObligacion({ db: dbAs(A), uid: A, rid }),
+    (err) => {
+      assert.equal(err.code, "CONDONADA");
+      return true;
+    },
+  );
+  const evs = await readEventos(rid, A);
+  assert.equal(evs.filter((e) => e.tipo === "condonacion").length, 1);
+  assert.equal(evs.filter((e) => e.tipo === "eliminacion").length, 0);
+
+  // eliminar dos veces sobre una abierta: el segundo rechazado (ELIMINADA)
+  const ridE = "h40_doble_elim";
+  await seedObl(ridE, baseObl({ monto: 700 }));
+  await eliminarObligacion({ db: dbAs(A), uid: A, rid: ridE });
+  await assert.rejects(
+    () => eliminarObligacion({ db: dbAs(A), uid: A, rid: ridE }),
+    (err) => {
+      assert.equal(err.code, "ELIMINADA");
+      return true;
+    },
+  );
+  const evsE = await readEventos(ridE, A);
+  assert.equal(evsE.filter((e) => e.tipo === "eliminacion").length, 1, "un solo evento de eliminación");
+});
+
+// ═══ «Dinero del mes»/stock — efectos de las tres acciones ═══
+
+test("H41 — eliminar obligación: pierde movimientoInicial del registrador y espejo; entregas dejan de sumar", async () => {
+  const start = new Date(2026, 9, 1); // octubre 2026
+  const nextStart = new Date(2026, 10, 1);
+  const rid = "h41_mes";
+  await seedObl(
+    rid,
+    baseObl({
+      sentido: "por_cobrar",
+      monto: 1000,
+      devuelto: 400,
+      movimientoInicial: "salida",
+      createdAt: Timestamp.fromDate(new Date(2026, 9, 10)),
+    }),
+  );
+  await seedEntrega(
+    "h41_e1",
+    baseEntrega(rid, {
+      monto: 400,
+      realizadoPorUid: B,
+      realizadoPorNombre: "Bob",
+      fechaPago: Timestamp.fromDate(new Date(2026, 9, 15)),
+    }),
+  );
+
+  async function flujosOctubre() {
+    const obl = await readObl(rid, A);
+    const ents = await readEntregas(rid, A);
+    const activas = [obl].filter((r) => r && !("eliminacion" in r));
+    return {
+      entradasA: entradasDelMes({ obligaciones: activas, entregas: ents, uid: A, start, nextStart }),
+      salidasA: salidasDelMes({ obligaciones: activas, entregas: ents, uid: A, start, nextStart }),
+      entradasB: entradasDelMes({ obligaciones: activas, entregas: ents, uid: B, start, nextStart }),
+      salidasB: salidasDelMes({ obligaciones: activas, entregas: ents, uid: B, start, nextStart }),
+    };
+  }
+
+  // ANTES: A sale 1000 (movimientoInicial) y recibe 400; B ve el espejo de
+  // entrada 1000 y su pago de 400 es salida.
+  const antes = await flujosOctubre();
+  assert.equal(antes.salidasA, 1000, "A: movimientoInicial salida");
+  assert.equal(antes.entradasA, 400, "A: devolución recibida");
+  assert.equal(antes.entradasB, 1000, "B: espejo de la alta por_cobrar (dinero)");
+  assert.equal(antes.salidasB, 400, "B: pagó la devolución");
+
+  await eliminarObligacion({ db: dbAs(A), uid: A, rid });
+
+  // DESPUÉS: todo en 0 — movimientoInicial y espejo fuera; la entrega
+  // CONSERVADA (auditoría) deja de sumar (su obl no está en activas).
+  const despues = await flujosOctubre();
+  assert.equal(despues.entradasA, 0);
+  assert.equal(despues.salidasA, 0);
+  assert.equal(despues.entradasB, 0);
+  assert.equal(despues.salidasB, 0);
+  assert.equal((await readEntregas(rid, A)).length, 1, "entrega conservada en BD (I-4)");
+});
+
+test("H42 — eliminar pago: esa entrada/salida desaparece de su mes; otros meses intactos", async () => {
+  const ene = { start: new Date(2026, 0, 1), nextStart: new Date(2026, 1, 1) };
+  const feb = { start: new Date(2026, 1, 1), nextStart: new Date(2026, 2, 1) };
+  const rid = "h42_meses";
+  await seedObl(rid, baseObl({ monto: 1000, devuelto: 500 }));
+  await seedEntrega(
+    "h42_ene",
+    baseEntrega(rid, {
+      monto: 300,
+      realizadoPorUid: B,
+      realizadoPorNombre: "Bob",
+      fechaPago: Timestamp.fromDate(new Date(2026, 0, 20)),
+    }),
+  );
+  await seedEntrega(
+    "h42_feb",
+    baseEntrega(rid, {
+      monto: 200,
+      realizadoPorUid: B,
+      realizadoPorNombre: "Bob",
+      fechaPago: Timestamp.fromDate(new Date(2026, 1, 10)),
+    }),
+  );
+
+  async function entradasDeA(mes) {
+    const obl = await readObl(rid, A);
+    const ents = await readEntregas(rid, A);
+    const activas = [obl].filter((r) => r && !("eliminacion" in r));
+    return entradasDelMes({
+      obligaciones: activas,
+      entregas: ents,
+      uid: A,
+      start: mes.start,
+      nextStart: mes.nextStart,
+    });
+  }
+
+  assert.equal(await entradasDeA(ene), 300);
+  assert.equal(await entradasDeA(feb), 200);
+
+  // La contraparte B (deudora) elimina su pago erróneo — ambas partes.
+  await eliminarEntrega({
+    db: dbAs(B),
+    uid: B,
+    did: "h42_ene",
+    motivo: "error de fecha",
+  });
+
+  assert.equal(await entradasDeA(ene), 0, "enero pierde la entrada eliminada");
+  assert.equal(await entradasDeA(feb), 200, "febrero intacto");
+  assert.equal((await readObl(rid, A)).devuelto, 200, "devuelto recalculado");
+});
+
+test("H43 — perdonar: pagos hechos se mantienen; pendiente cancelado del stock; sin caja nueva (I-12)", async () => {
+  const start = new Date(2026, 9, 1);
+  const nextStart = new Date(2026, 10, 1);
+  const rid = "h43_perd";
+  await seedObl(
+    rid,
+    baseObl({
+      sentido: "por_cobrar",
+      monto: 1000,
+      devuelto: 400,
+      createdAt: Timestamp.fromDate(new Date(2026, 9, 5)),
+    }),
+  );
+  await seedEntrega(
+    "h43_e1",
+    baseEntrega(rid, {
+      monto: 400,
+      realizadoPorUid: B,
+      realizadoPorNombre: "Bob",
+      fechaPago: Timestamp.fromDate(new Date(2026, 9, 12)),
+    }),
+  );
+
+  async function estadoA() {
+    const obl = await readObl(rid, A);
+    const ents = await readEntregas(rid, A);
+    const activas = [obl].filter((r) => r && !("eliminacion" in r));
+    // stock igual que useReintegros: excluye condonadas (filtro cliente)
+    const pendienteCobro = activas
+      .filter(
+        (r) =>
+          !("condonacion" in r) &&
+          sentidoDelViewer(r, A) === "por_cobrar" &&
+          saldoDe(r) > 0,
+      )
+      .reduce((a, r) => a + saldoDe(r), 0);
+    return {
+      entradas: entradasDelMes({ obligaciones: activas, entregas: ents, uid: A, start, nextStart }),
+      pendienteCobro,
+      devuelto: obl.devuelto,
+      nEntregas: ents.length,
+    };
+  }
+
+  const antes = await estadoA();
+  assert.equal(antes.entradas, 400, "pago recibido en el mes");
+  assert.equal(antes.pendienteCobro, 600, "stock pendiente de cobro");
+
+  await condonar({ db: dbAs(A), uid: A, rid, motivo: "no puede pagar" });
+
+  const despues = await estadoA();
+  assert.equal(despues.entradas, 400, "pagos ya hechos se mantienen en entradas");
+  assert.equal(despues.pendienteCobro, 0, "pendiente cancelado del stock");
+  assert.equal(despues.devuelto, 400, "devuelto intacto (I-12)");
+  assert.equal(despues.nEntregas, 1, "sin entrega nueva; la existente intacta");
 });

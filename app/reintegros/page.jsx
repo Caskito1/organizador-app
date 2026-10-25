@@ -12,6 +12,9 @@
 // suscribe los eventos `edicion` de las obligaciones visibles (0 rids en
 // Saldados ⇒ desuscribe todo) y EditarReintegroModal edita pago u
 // obligación. CerradosSection no recibe nada de edición.
+// 4.3-bis (23/10/2026): acciones de eliminar/perdonar vía
+// ConfirmarAccionModal (menú ⋮ de FilaReintegro → onAccionObligacion /
+// onAccionEntrega). DevolucionModal y useReintegros SIN cambios.
 
 "use client";
 
@@ -32,6 +35,8 @@ import PendientesSection from "./sections/PendientesSection";
 import CerradosSection from "./sections/CerradosSection";
 import DevolucionModal from "./components/DevolucionModal";
 import EditarReintegroModal from "./components/EditarReintegroModal";
+import ConfirmarAccionModal from "./components/ConfirmarAccionModal";
+import MenuAccionesSheet from "./components/MenuAccionesSheet";
 
 function getMesLabel(date) {
   return date.toLocaleString("es-AR", { month: "long", year: "numeric" });
@@ -82,6 +87,13 @@ export default function ReintegrosPage() {
   const [pago, setPago] = useState(null);
   // Modal de edición de monto (4.3b): { modo, r, entrega? }.
   const [edicion, setEdicion] = useState(null);
+  // Modal de confirmación de acciones (4.3-bis): { tipo, r, entrega? } —
+  // tipo: «condonar» | «eliminar-obligacion» | «eliminar-pago».
+  const [accion, setAccion] = useState(null);
+  // Hoja del menú ⋮ (4.3-bis, 24/10/2026): { r, entrega?, items } - se
+  // monta como los otros modales (MenuAccionesSheet), fuera de los
+  // acordeones y bajo el BottomNav.
+  const [menu, setMenu] = useState(null);
 
   const {
     loading,
@@ -225,6 +237,12 @@ export default function ReintegrosPage() {
               onEditarEntrega={(r, entrega) =>
                 setEdicion({ modo: "pago", r, entrega })
               }
+              onAccionObligacion={(r, tipo) => setAccion({ tipo, r })}
+              onAccionEntrega={(r, entrega, tipo) =>
+                setAccion({ tipo, r, entrega })
+              }
+              onMenuAbrir={setMenu}
+              menuActivo={menu}
             />
           ) : (
             <CerradosSection
@@ -235,6 +253,7 @@ export default function ReintegrosPage() {
               onTogglePrestamos={() => setOpenPrestamos((v) => !v)}
               openDeudas={openDeudas}
               onToggleDeudas={() => setOpenDeudas((v) => !v)}
+              onAccionObligacion={(r, tipo) => setAccion({ tipo, r })}
             />
           )}
 
@@ -341,6 +360,21 @@ export default function ReintegrosPage() {
           entrega={edicion.entrega}
           onClose={() => setEdicion(null)}
         />
+      )}
+
+      {/* Modal de confirmación de acciones (4.3-bis) — se monta solo al abrir */}
+      {accion && (
+        <ConfirmarAccionModal
+          tipo={accion.tipo}
+          r={accion.r}
+          entrega={accion.entrega}
+          onClose={() => setAccion(null)}
+        />
+      )}
+
+      {/* Hoja del menú ⋮ (4.3-bis, 24/10/2026) - se monta solo al abrir */}
+      {menu && (
+        <MenuAccionesSheet menu={menu} onClose={() => setMenu(null)} />
       )}
     </Appshell>
   );
