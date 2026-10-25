@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test:rules": "firebase emulators:exec --only firestore --project demo-finanzas \"node --test tests/rules/\"",
     "harness:reintegros": "firebase emulators:exec --only firestore --project demo-finanzas \"node --experimental-detect-module --test tests/harness/\"",
-    "seed:emulator": "node scripts/seed-emulator.mjs"
+    "seed:emulator": "node --experimental-detect-module scripts/seed-emulator.mjs"
   },
   "dependencies": {
     "firebase": "^12.12.1",

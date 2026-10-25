@@ -1,7 +1,10 @@
 // scripts/seed-emulator.mjs
 // Siembra los EMULADORES (Auth + Firestore) con los datos mínimos para
 // probar 4.2 en Local: 2 usuarios de prueba + 1 grupo de 2 miembros
-// (selector de contraparte funcional).
+// (selector de contraparte funcional). 4.3-bis (23/10/2026): agrega §6 con
+// el fixture de Reintegros — 4 obligaciones creadas con los MISMOS helpers
+// de la app (bajo firestore.rules del repo): abierta con pagos (Ana
+// acreedora / Bruno contraparte), sin pagos, liquidada y perdonada.
 //
 // REGLA DURA: aborta si no detecta FIRESTORE_EMULATOR_HOST o si el host no es
 // 127.0.0.1/localhost — nunca escribe contra el proyecto real. Las escrituras
@@ -18,7 +21,23 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+  Timestamp,
+} from "firebase/firestore";
+
+import { submitReintegro } from
+  "../app/agregar/components/reintegros/helpers/submitReintegro.js";
+import { submitDevolucion } from
+  "../app/agregar/components/reintegros/helpers/submitDevolucion.js";
+import { condonar } from
+  "../app/agregar/components/reintegros/helpers/condonar.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -210,6 +229,106 @@ try {
   const userConOk = await getDoc(doc(dbReg, "users", contraparte.uid));
   if (!grupoOk.exists() || !userConOk.exists()) {
     abort("la verificación de lectura falló (grupo o users/contraparte).");
+  }
+
+  // ─── 6) Fixture 4.3-bis — 4 obligaciones de Reintegros ────────────────
+  // Creadas con los MISMOS helpers de la app sobre rules-unit-testing
+  // contexts: todo legal bajo firestore.rules. Rids fijos ⇒ idempotente
+  // (si ya existe, se salta; para regenerar, reiniciar el emulador — no
+  // persiste).
+  const FIXTURE_43BIS = [
+    {
+      rid: "fix43bis-abierta",
+      concepto: "Préstamo a Bruno — Alquiler",
+      sentido: "por_cobrar",
+      monto: 1000,
+      pagos: [300, 300],
+      perdonar: false,
+    },
+    {
+      rid: "fix43bis-sinpago",
+      concepto: "Deuda con Bruno — Cena",
+      sentido: "por_devolver",
+      monto: 500,
+      pagos: [],
+      perdonar: false,
+    },
+    {
+      rid: "fix43bis-liquidada",
+      concepto: "Préstamo saldado — Libros",
+      sentido: "por_cobrar",
+      monto: 600,
+      pagos: [600],
+      perdonar: false,
+    },
+    {
+      rid: "fix43bis-perdonada",
+      concepto: "Préstamo perdonado — Viaje",
+      sentido: "por_cobrar",
+      monto: 700,
+      pagos: [200],
+      perdonar: true,
+    },
+  ];
+
+  for (const fx of FIXTURE_43BIS) {
+    // Chequeo de existencia por LIST con el MISMO filtro de la app
+    // (participantes array-contains) — un getDoc sobre un doc inexistente
+    // cae en L219 (resource null) y un list con __name__ no lo evalúa bien
+    // tampoco; el rid se compara en JS.
+    const previa = await getDocs(
+      query(
+        collection(dbReg, "reintegros"),
+        where("participantes", "array-contains", registrador.uid),
+      ),
+    );
+    if (previa.docs.some((d) => d.id === fx.rid)) {
+      console.log(`[seed] fixture 4.3-bis: ${fx.rid} ya existe — se salta`);
+      continue;
+    }
+    await submitReintegro({
+      db: dbReg,
+      uid: registrador.uid,
+      uidNombre: registrador.displayName,
+      sentido: fx.sentido,
+      monto: fx.monto,
+      contraparteUid: contraparte.uid,
+      contraparteNombre: contraparte.displayName,
+      groupId: null,
+      concepto: fx.concepto,
+      detalle: "Fixture 4.3-bis",
+      movimientoInicial: fx.sentido === "por_cobrar" ? "salida" : "entrada",
+      ...(fx.sentido === "por_cobrar"
+        ? { movimientoInicialTipo: "dinero" }
+        : {}),
+      rid: fx.rid,
+    });
+    for (const monto of fx.pagos) {
+      await submitDevolucion({
+        db: dbCon,
+        uid: contraparte.uid,
+        uidNombre: contraparte.displayName,
+        rid: fx.rid,
+        monto,
+        realizadoPorUid: contraparte.uid,
+        realizadoPorNombre: contraparte.displayName,
+        fechaPago: Timestamp.now(),
+        detalle: null,
+      });
+    }
+    if (fx.perdonar) {
+      await condonar({
+        db: dbReg,
+        uid: registrador.uid,
+        rid: fx.rid,
+        motivo: "Fixture 4.3-bis",
+      });
+    }
+    console.log(
+      `[seed] fixture 4.3-bis: ${fx.rid} (${fx.concepto}, ${fx.pagos.length} pago/s${
+        fx.perdonar ? ", perdonada" : ""
+      })`,
+    );
   }
 
   console.log("[seed] Firestore OK (bajo firestore.rules del repo):");
