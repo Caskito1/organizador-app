@@ -69,6 +69,18 @@ function esDineroInicial(r) {
   return r.movimientoInicialTipo !== "item";
 }
 
+// ── Regla de dominio del espejo (30/10/2026) — NO SIMETRIZAR ──────────────
+// En Reintegros SOLO circula dinero (prestar objetos no existe en el
+// modelo): el eje dinero/ítem dice QUÉ se entregó, no si hubo caja.
+//   · SALIDA: siempre salió dinero (efectivo prestado o pago adelantado)
+//     ⇒ salidasDelMes / espejoSalida NO filtran por tipo.
+//   · ENTRADA: solo si el dinero entró a la cuenta; si la deuda nace
+//     porque otro pagó o compró algo por vos, no hay entrada (la deuda
+//     sí existe) ⇒ espejoEntrada exige dinero (esDineroInicial).
+// La asimetría es del DOMINIO: entrada espejo solo dinero · salida espejo
+// sin filtro. No son simétricos y no deben simetrizarse (4.5-bis cancelada
+// el 30/10/2026 sin cambio de código; ver context/dominio.md §5.1 ítem 5).
+
 // Espejo: SOLO la contraparte MIEMBRO bookkea el movimiento de la alta de
 // una obligación registrada por el otro (decisión 4.3c). Las externas no:
 // su uid no está en participantes, así que nunca matchean este filtro.
@@ -82,6 +94,9 @@ function esContraparteMiembro(r, uid) {
 // mes + Σ monto de obligaciones CREADAS POR EL USUARIO (registradoPor ===
 // uid) con movimientoInicial == "entrada" en el mes + espejo: obligación
 // ajena por_cobrar con dinero → mi ENTRADA en el mes de la alta.
+// ENTRADA ≠ SALIDA: este espejo exige dinero (regla de dominio de arriba).
+// Un ítem no genera entrada aunque la deuda exista. NO simetrizar con
+// espejoSalida.
 export function entradasDelMes({
   obligaciones,
   entregas,
@@ -124,8 +139,12 @@ export function entradasDelMes({
 // Salidas del mes (§6.2/I-8 + espejo 4.3c): devoluciones realizadas del
 // mes + Σ monto de obligaciones CREADAS POR EL USUARIO con
 // movimientoInicial == "salida" en el mes + espejo: obligación ajena
-// por_devolver (la registró quien recibe) → la contraparte miembro ve
-// SIEMPRE su SALIDA en el mes de la alta, incluso si es un ítem.
+// por_devolver (la registró quien recibe) → la contraparte miembro ve su
+// SALIDA en el mes de la alta, sea efectivo prestado o una compra
+// adelantada: en ambos casos salió dinero de la cuenta.
+// SALIDA ≠ ENTRADA: aquí NO se filtra por tipo a propósito; es la
+// asimetría real del dominio (regla de arriba). NO simetrizar con
+// espejoEntrada — 4.5-bis se canceló el 30/10/2026.
 export function salidasDelMes({
   obligaciones,
   entregas,
