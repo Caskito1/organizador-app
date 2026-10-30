@@ -147,10 +147,15 @@ export async function submitReintegro({
     tx.set(doc(db, "reintegros", rid), payload);
 
     // Bitácora D-3: evento creacion/obligacion en la misma transacción.
+    // 4.4-bis: esquema canónico — `monto` + `sentido` (aditivo; los eventos
+    // anteriores al 30/10/2026 no los tienen y se toleran). `devuelto` se
+    // omite a propósito: el alta siempre nace con devuelto == 0 (reglas).
     tx.set(doc(collection(db, "reintegros", rid, "eventos")), {
       registradoPor: uid,
       tipo: "creacion",
       entidad: "obligacion",
+      monto,
+      sentido,
       createdAt: serverTimestamp(),
     });
   });

@@ -86,6 +86,15 @@
 // liquidaba» del caso 11 no es alcanzable vía helper — la guarda LIQUIDADA
 // de cliente (decisión 4.3-bis) impide eliminar pagos de una liquidada; se
 // prueba reabre parcial→pendiente.
+//   +  (H44)  esquema canónico: creacion y edicion (obligacion/entrega)
+//   +  (H45)  esquema canónico: eliminacion y condonacion + celda que no aplica
+//   +  (H46)  una acción ⇒ un evento; operación rechazada ⇒ cero eventos
+//   +  (H47)  create-only (caso 15): update/delete rechazados; no participante
+// H44–H47: bitácora (4.4-bis, 30/10/2026). El esquema canónico se asienta en
+// `context/dominio.md` §5.1 y en EVIDENCIA-4.4-bis.md. LIMITACIÓN CONOCIDA
+// (documentada, NO asentada como assert): un participante puede crear un
+// evento sin acción porque las reglas no pueden verificarlo dentro de una
+// transacción; no altera saldos ni montos, solo el historial.
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -104,6 +113,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   writeBatch,
   query,
   where,
@@ -2650,4 +2660,371 @@ test("H43 — perdonar: pagos hechos se mantienen; pendiente cancelado del stock
   assert.equal(despues.pendienteCobro, 0, "pendiente cancelado del stock");
   assert.equal(despues.devuelto, 400, "devuelto intacto (I-12)");
   assert.equal(despues.nEntregas, 1, "sin entrega nueva; la existente intacta");
+});
+
+// ═══ 4.4-bis — Bitácora: esquema canónico y cobertura (H44–H47) ═══
+//
+// Esquema canónico (P-1 aprobado 30/10/2026; detalle en dominio.md §5.1 y
+// EVIDENCIA-4.4-bis.md §2):
+//   CAPA 1 (todos): registradoPor, tipo, entidad, createdAt.
+//   CAPA 2 (por tipo/entidad): ver CANON_EVENTO.
+//   CAPA 3 (tolerancia): eventos previos no se completan; campos extra se
+//   toleran sin leerse (p. ej. reintegroId); `motivo: null` ≠ ausente.
+// Los eventos de creacion llevan monto/entregaId desde 4.4-bis (G-A/G-B).
+
+const CAMPO_ID = "id";
+const canon = (...campos) => campos.sort();
+const CANON_EVENTO = {
+  "creacion/obligacion": canon(
+    "registradoPor",
+    "tipo",
+    "entidad",
+    "monto",
+    "sentido",
+    "createdAt",
+  ),
+  "creacion/entrega": canon(
+    "registradoPor",
+    "tipo",
+    "entidad",
+    "entregaId",
+    "monto",
+    "createdAt",
+  ),
+  "edicion/obligacion": canon(
+    "registradoPor",
+    "tipo",
+    "entidad",
+    "montoAnterior",
+    "montoNuevo",
+    "createdAt",
+  ),
+  "edicion/entrega": canon(
+    "registradoPor",
+    "tipo",
+    "entidad",
+    "entregaId",
+    "montoAnterior",
+    "montoNuevo",
+    "createdAt",
+  ),
+  "eliminacion/obligacion": canon(
+    "registradoPor",
+    "tipo",
+    "entidad",
+    "monto",
+    "devuelto",
+    "motivo",
+    "createdAt",
+  ),
+  "eliminacion/entrega": canon(
+    "registradoPor",
+    "tipo",
+    "entidad",
+    "reintegroId", // heredado de 4.3-bis: redundante con la ruta, se tolera
+    "entregaId",
+    "montoEliminado", // alias heredado de `monto` en esta celda
+    "motivo",
+    "createdAt",
+  ),
+  "condonacion/obligacion": canon(
+    "registradoPor",
+    "tipo",
+    "entidad",
+    "monto",
+    "devuelto",
+    "motivo",
+    "createdAt",
+  ),
+};
+
+function clavesDe(ev) {
+  return Object.keys(ev)
+    .filter((k) => k !== CAMPO_ID)
+    .sort();
+}
+
+function assertEsquema(ev, tipo, entidad) {
+  const esperado = CANON_EVENTO[`${tipo}/${entidad}`];
+  assert.ok(esperado, `sin esquema canónico para ${tipo}/${entidad}`);
+  assert.deepEqual(
+    clavesDe(ev),
+    esperado,
+    `esquema canónico ${tipo}/${entidad}: faltan o sobran campos`,
+  );
+  assert.ok(ev.createdAt instanceof Timestamp, "createdAt de servidor");
+}
+
+test("H44 — esquema canónico: creacion y edición de obligación y entrega (4.4-bis)", async () => {
+  // (a) creacion/obligacion — monto + sentido (G-B)
+  const rid = "h44_alta";
+  await submitReintegro({
+    db: dbAs(A),
+    uid: A,
+    uidNombre: "Alice",
+    sentido: "por_cobrar",
+    monto: 1000,
+    contraparteUid: B,
+    contraparteNombre: "Bob",
+    groupId: null,
+    concepto: "Alquiler octubre",
+    detalle: null,
+    movimientoInicial: "salida",
+    movimientoInicialTipo: "dinero",
+    rid,
+  });
+  const evAlta = (await readEventos(rid, A))[0];
+  assertEsquema(evAlta, "creacion", "obligacion");
+  assert.equal(evAlta.monto, 1000, "monto del alta en la bitácora");
+  assert.equal(evAlta.sentido, "por_cobrar", "sentido del alta en la bitácora");
+  assert.equal(evAlta.registradoPor, A);
+
+  // (b) creacion/entrega — entregaId + monto (G-A)
+  await submitDevolucion({
+    db: dbAs(A),
+    uid: A,
+    uidNombre: "Alice",
+    rid,
+    monto: 400,
+    realizadoPorUid: A,
+    realizadoPorNombre: "Alice",
+    fechaPago: Timestamp.now(),
+    detalle: null,
+  });
+  const evs = await readEventos(rid, A);
+  assert.equal(evs.length, 2, "alta + pago: un evento por acción");
+  const evEntrega = evs.find(
+    (e) => e.tipo === "creacion" && e.entidad === "entrega",
+  );
+  assertEsquema(evEntrega, "creacion", "entrega");
+  assert.equal(evEntrega.monto, 400);
+  const entregas = await readEntregas(rid, A);
+  assert.equal(entregas.length, 1);
+  assert.equal(
+    evEntrega.entregaId,
+    entregas[0].id,
+    "entregaId correlaciona el evento con el pago real",
+  );
+
+  // (c) edicion/obligacion
+  const ridEdObl = "h44_ed_obl";
+  await seedObl(ridEdObl, baseObl({ monto: 1000, devuelto: 0 }));
+  await editarObligacion({ db: dbAs(A), uid: A, rid: ridEdObl, monto: 1200 });
+  const evEdObl = (await readEventos(ridEdObl, A))[0];
+  assertEsquema(evEdObl, "edicion", "obligacion");
+  assert.equal(evEdObl.montoAnterior, 1000);
+  assert.equal(evEdObl.montoNuevo, 1200);
+
+  // (d) edicion/entrega (la contraparte B edita; entregaId presente)
+  const ridEdEnt = "h44_ed_ent";
+  await seedObl(ridEdEnt, baseObl({ monto: 1000, devuelto: 300 }));
+  await seedEntrega("h44_ed_e1", baseEntrega(ridEdEnt, { monto: 300 }));
+  await editarEntrega({ db: dbAs(B), uid: B, did: "h44_ed_e1", monto: 200 });
+  const evEdEnt = (await readEventos(ridEdEnt, A))[0];
+  assertEsquema(evEdEnt, "edicion", "entrega");
+  assert.equal(evEdEnt.entregaId, "h44_ed_e1");
+  assert.equal(evEdEnt.montoAnterior, 300);
+  assert.equal(evEdEnt.montoNuevo, 200);
+  assert.equal(evEdEnt.registradoPor, B, "atribución a quien editó");
+});
+
+test("H45 — esquema canónico: eliminación y condonación; celda que no aplica (4.4-bis)", async () => {
+  // (a) eliminacion/obligacion (con motivo)
+  const ridObl = "h45_elim_obl";
+  await seedObl(ridObl, baseObl({ monto: 900, devuelto: 0 }));
+  await eliminarObligacion({
+    db: dbAs(A),
+    uid: A,
+    rid: ridObl,
+    motivo: "error de carga",
+  });
+  const evObl = (await readEventos(ridObl, A))[0];
+  assertEsquema(evObl, "eliminacion", "obligacion");
+  assert.equal(evObl.monto, 900);
+  assert.equal(evObl.devuelto, 0);
+  assert.equal(evObl.motivo, "error de carga");
+
+  // (b) eliminacion/entrega (sin motivo → null explícito + alias heredado)
+  const ridEnt = "h45_elim_ent";
+  await seedObl(ridEnt, baseObl({ monto: 1000, devuelto: 400 }));
+  await seedEntrega("h45_e1", baseEntrega(ridEnt, { monto: 400 }));
+  await eliminarEntrega({ db: dbAs(A), uid: A, did: "h45_e1" });
+  const evsEnt = await readEventos(ridEnt, A);
+  assert.equal(evsEnt.length, 1, "un evento por acción");
+  assertEsquema(evsEnt[0], "eliminacion", "entrega");
+  assert.equal(evsEnt[0].entregaId, "h45_e1");
+  assert.equal(
+    evsEnt[0].montoEliminado,
+    400,
+    "alias heredado de `monto` en esta celda",
+  );
+  assert.equal(evsEnt[0].motivo, null, "motivo null explícito, no ausente");
+
+  // (c) condonacion/obligacion (con motivo)
+  const ridCon = "h45_cond";
+  await seedObl(ridCon, baseObl({ monto: 1000, devuelto: 250 }));
+  await seedEntrega("h45_e2", baseEntrega(ridCon, { monto: 250 }));
+  await condonar({
+    db: dbAs(A),
+    uid: A,
+    rid: ridCon,
+    motivo: "no puede pagar",
+  });
+  const evCon = (await readEventos(ridCon, A))[0];
+  assertEsquema(evCon, "condonacion", "obligacion");
+  assert.equal(evCon.monto, 1000);
+  assert.equal(evCon.devuelto, 250);
+  assert.equal(evCon.motivo, "no puede pagar");
+
+  // (d) Celda que NO aplica: perdonar es sobre la deuda, no sobre un pago.
+  const evsCon = await readEventos(ridCon, A);
+  assert.equal(
+    evsCon.filter(
+      (e) => e.tipo === "condonacion" && e.entidad === "entrega",
+    ).length,
+    0,
+    "condonacion/entrega no existe: ninguna acción la produce",
+  );
+});
+
+test("H46 — una acción ⇒ un evento; operación rechazada ⇒ cero eventos nuevos (4.4-bis)", async () => {
+  const rid = "h46_flujo";
+  const eventos = async () => (await readEventos(rid, A)).length;
+
+  // (a) alta (1) + pago 300 (2) + editar entrega a 400 (3)
+  await submitReintegro({
+    db: dbAs(A),
+    uid: A,
+    uidNombre: "Alice",
+    sentido: "por_cobrar",
+    monto: 1000,
+    contraparteUid: B,
+    contraparteNombre: "Bob",
+    groupId: null,
+    concepto: "Flujo bitácora",
+    detalle: null,
+    movimientoInicial: "salida",
+    movimientoInicialTipo: "dinero",
+    rid,
+  });
+  await submitDevolucion({
+    db: dbAs(A),
+    uid: A,
+    uidNombre: "Alice",
+    rid,
+    monto: 300,
+    realizadoPorUid: A,
+    realizadoPorNombre: "Alice",
+    fechaPago: Timestamp.now(),
+  });
+  const did = (await readEntregas(rid, A))[0].id;
+  await editarEntrega({ db: dbAs(A), uid: A, did, monto: 400 });
+  assert.equal(await eventos(), 3, "3 acciones exitosas ⇒ 3 eventos");
+
+  // (b) fallo SALDO_INSUFICIENTE (saldo 600, intento 700) ⇒ sin evento
+  await assert.rejects(
+    () =>
+      submitDevolucion({
+        db: dbAs(A),
+        uid: A,
+        uidNombre: "Alice",
+        rid,
+        monto: 700,
+        realizadoPorUid: A,
+        realizadoPorNombre: "Alice",
+        fechaPago: Timestamp.now(),
+      }),
+    (err) => {
+      assert.equal(err.code, "SALDO_INSUFICIENTE");
+      return true;
+    },
+  );
+  assert.equal(await eventos(), 3, "rechazo por saldo: sin evento nuevo");
+
+  // (c) fallo MONTO_BLOQUEADO (devuelto 400 > 0) ⇒ sin evento
+  await assert.rejects(
+    () => editarObligacion({ db: dbAs(A), uid: A, rid, monto: 1300 }),
+    (err) => {
+      assert.equal(err.code, "MONTO_BLOQUEADO");
+      return true;
+    },
+  );
+  assert.equal(await eventos(), 3, "rechazo por monto bloqueado: sin evento");
+
+  // (d) eliminar entrega (4) → devuelto 0
+  await eliminarEntrega({ db: dbAs(A), uid: A, did });
+  assert.equal(await eventos(), 4, "eliminar pago: su evento");
+
+  // (e) fallo MONTO_SIN_CAMBIOS (monto igual, devuelto 0) ⇒ sin evento
+  await assert.rejects(
+    () => editarObligacion({ db: dbAs(A), uid: A, rid, monto: 1000 }),
+    (err) => {
+      assert.equal(err.code, "MONTO_SIN_CAMBIOS");
+      return true;
+    },
+  );
+  assert.equal(await eventos(), 4, "sin cambios: sin evento");
+
+  // (f) editar obligación 1000→1200 (5) y eliminar obligación (6)
+  await editarObligacion({ db: dbAs(A), uid: A, rid, monto: 1200 });
+  await eliminarObligacion({ db: dbAs(A), uid: A, rid, motivo: "duplicado" });
+  assert.equal(await eventos(), 6, "6 acciones exitosas ⇒ 6 eventos");
+
+  // (g) doble eliminación ⇒ ELIMINADA, sin evento nuevo
+  await assert.rejects(
+    () => eliminarObligacion({ db: dbAs(A), uid: A, rid }),
+    (err) => {
+      assert.equal(err.code, "ELIMINADA");
+      return true;
+    },
+  );
+  assert.equal(await eventos(), 6, "doble eliminación: sin evento");
+
+  // (h) Invariante del caso: nEventos == nAccionesExitosas (6), por tipo.
+  const evs = await readEventos(rid, A);
+  assert.equal(evs.filter((e) => e.tipo === "creacion").length, 2);
+  assert.equal(evs.filter((e) => e.tipo === "edicion").length, 2);
+  assert.equal(evs.filter((e) => e.tipo === "eliminacion").length, 2);
+  assert.equal(evs.filter((e) => e.tipo === "condonacion").length, 0);
+});
+
+test("H47 — bitácora create-only (caso 15): update/delete rechazados; no participante rechazado (4.4-bis)", async () => {
+  const rid = "h47_createonly";
+  await submitReintegro({
+    db: dbAs(A),
+    uid: A,
+    uidNombre: "Alice",
+    sentido: "por_cobrar",
+    monto: 500,
+    contraparteUid: B,
+    contraparteNombre: "Bob",
+    groupId: null,
+    concepto: "Create-only",
+    detalle: null,
+    movimientoInicial: "ninguno",
+    rid,
+  });
+
+  const [ev] = await readEventos(rid, A);
+  assert.equal(ev.tipo, "creacion");
+  const evRef = doc(dbAs(A), "reintegros", rid, "eventos", ev.id);
+
+  // update y delete: rechazados por reglas (allow update, delete: if false)
+  await assertFails(updateDoc(evRef, { tipo: "edicion" }));
+  await assertFails(deleteDoc(evRef));
+
+  const despues = await readEventos(rid, A);
+  assert.equal(despues.length, 1, "un solo evento, intacto");
+  assert.equal(despues[0].tipo, "creacion", "sin reescritura");
+
+  // no participante (C) no puede crear un evento en la bitácora ajena
+  await assertFails(
+    setDoc(doc(dbAs(C), "reintegros", rid, "eventos", "h47_forjado"), {
+      registradoPor: C,
+      tipo: "edicion",
+      entidad: "obligacion",
+      createdAt: Timestamp.now(),
+    }),
+  );
+  assert.equal((await readEventos(rid, A)).length, 1, "sin evento forjado");
 });

@@ -80,7 +80,12 @@ export async function submitDevolucion({
     }
 
     // Entrega (historial permanente; campo `detalle` según suite de reglas).
-    tx.set(doc(collection(db, "reintegro_devoluciones")), {
+    // 4.4-bis (G-A): la ref se captura ANTES de escribir para poder publicar
+    // `entregaId` en el evento — sin él, creacion/entrega es
+    // incorrelacionable con el pago (useEdiciones descarta eventos de
+    // entrega sin entregaId). El id sigue siendo autogenerado en cliente.
+    const entRef = doc(collection(db, "reintegro_devoluciones"));
+    tx.set(entRef, {
       reintegroId: rid,
       monto,
       realizadoPorUid: realizadoPorUid ?? null,
@@ -96,10 +101,14 @@ export async function submitDevolucion({
     tx.update(oblRef, { devuelto: Number(obl.devuelto) + monto });
 
     // Bitácora D-3: evento creacion/entrega en la misma transacción.
+    // 4.4-bis: esquema canónico — `entregaId` + `monto` (aditivo; los eventos
+    // anteriores al 30/10/2026 no los tienen y se toleran).
     tx.set(doc(collection(db, "reintegros", rid, "eventos")), {
       registradoPor: uid,
       tipo: "creacion",
       entidad: "entrega",
+      entregaId: entRef.id,
+      monto,
       createdAt: serverTimestamp(),
     });
   });
