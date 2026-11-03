@@ -4,14 +4,19 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ═══════════════════════════════════════════════════════════════════
-    // BLOQUE A — Reglas vigentes en consola (COPIA EXACTA, SIN EDICIONES)
-    // Obtenidas de Firebase Console → Firestore → Rules el 16/10/2026.
-    // SHA-256 del texto de consola: 9769979CD0EDEC03948C80D3CB2EC00191334E070CD431F2C69B092865C57792
+    // BLOQUE A — Reglas vigentes en consola al 16/10/2026
+    // Verificadas SIN CAMBIOS contra la consola el 03/11/2026 (Paso 0 de
+    // 4.5-fecha: texto pegado por el usuario). El delta del repo es solo el
+    // BLOQUE B de Reintegros, todavía NO desplegado (cierre de la Etapa 4).
+    // SHA-256 del texto de consola (16/10/2026): 9769979CD0EDEC03948C80D3CB2EC00191334E070CD431F2C69B092865C57792
     // Backup de restauración: temp/opencode/rules-consola-backup-2026-10-16.txt
     // NOTA: `productos` NO tiene regla en consola (default-deny). Documentado
     // en la evidencia de 4.0; fuera del alcance de estas reglas.
     // Cubre: groups, gastos, ingresos, transferencias, fixed_expenses,
     // fixed_expense_entries, users.
+    // ─── Enmienda 4.5-fecha (03/11/2026, PENDIENTE DE DEPLOY) ───────────
+    // Solo `gastos`: `fecha` opcional (tipo + rango) y `createdAt`
+    // inmutable. El resto del bloque sigue siendo la copia de consola.
     // ═══════════════════════════════════════════════════════════════════
 
     // ─────────────────────────────
@@ -29,6 +34,16 @@ service cloud.firestore {
         && request.auth.uid in
           get(/databases/$(database)/documents/groups/$(groupId))
             .data.members;
+    }
+
+    // 4.5-fecha: `fecha` es OPCIONAL en reglas (compatibilidad con clientes
+    // viejos); la app nueva siempre la escribe. Rango razonable: desde
+    // 2020-01-01 hasta 1 día después de `request.time` (tolera el desfase de
+    // zona de una fecha local guardada a medianoche).
+    function fechaGastoValida(f) {
+      return f is timestamp
+        && f >= timestamp.date(2020, 1, 1)
+        && f <= request.time + duration.value(1, 'd');
     }
 
     // ─────────────────────────────
@@ -76,10 +91,34 @@ service cloud.firestore {
             request.resource.data.tipo == "compartido"
             && isMember(request.resource.data.groupId)
           )
-        );
+        )
+        // 4.5-fecha: fecha del gasto (opcional por compatibilidad).
+        && (
+          !('fecha' in request.resource.data)
+          || fechaGastoValida(request.resource.data.fecha)
+        )
+        // 4.5-fecha: `createdAt` es auditoría y debe ser el reloj del server.
+        && request.resource.data.createdAt == request.time;
 
-      allow update, delete: if signedIn()
+      // 4.5-fecha: update y delete se separan porque en un delete
+      // `request.resource` es null (leerlo denegaría el borrado).
+      allow delete: if signedIn()
         && resource.data.usuario == request.auth.uid;
+
+      allow update: if signedIn()
+        && resource.data.usuario == request.auth.uid
+        // 4.5-fecha: `createdAt` inmutable. Forma defensiva: un documento
+        // histórico sin `createdAt` (carga manual por consola) sigue editable.
+        && (
+          !('createdAt' in resource.data)
+          || request.resource.data.createdAt == resource.data.createdAt
+        )
+        // 4.5-fecha: si el documento tiene `fecha`, debe ser un timestamp
+        // válido también después del update.
+        && (
+          !('fecha' in request.resource.data)
+          || fechaGastoValida(request.resource.data.fecha)
+        );
     }
 
     // ─────────────────────────────
