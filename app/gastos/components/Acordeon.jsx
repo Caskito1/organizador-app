@@ -42,9 +42,17 @@ export default function Acordeon({
     );
   }
 
+  // Abierto: overflow-visible + z-10 para que el menú ⋯ (absolute) no quede
+  // recortado por el acordeón ni tapado por la sección siguiente. Cerrado:
+  // overflow-hidden conserva el recorte de las esquinas redondeadas.
   return (
-    
-    <div className="overflow-hidden rounded-[20px] border border-border bg-[rgba(138,100,255,0.07)] backdrop-blur-[16px]">
+    <div
+      className={`${
+        open
+          ? "relative z-10 overflow-visible"
+          : "overflow-hidden"
+      } rounded-[20px] border border-border bg-[rgba(138,100,255,0.07)] backdrop-blur-[16px]`}
+    >
     <button
   onClick={onToggle}
   className="flex w-full items-center justify-between bg-transparent px-[18px] py-4 border-none cursor-pointer"
