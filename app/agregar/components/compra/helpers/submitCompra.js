@@ -3,17 +3,23 @@ import {
   doc,
   collection,
   serverTimestamp,
+  Timestamp,
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
+import { fechaLocal } from "@/app/gastos/helpers/dateHelpers";
 
 export default async function submitCompra({
   carrito,
   user,
   tipo,
   selectedGroupId,
+  fechaISO,
 }) {
   const items = Object.values(carrito);
+
+  // 4.5-fecha: la misma fecha para todos los ítems de la compra.
+  const fecha = Timestamp.fromDate(fechaLocal(fechaISO));
 
   const nombreUsuario =
     user.displayName ||
@@ -67,6 +73,8 @@ export default async function submitCompra({
         tipo === "compartido"
           ? selectedGroupId
           : null,
+
+      fecha,
 
       createdAt:
         serverTimestamp(),

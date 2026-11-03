@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
+import { fechaEfectiva } from "../helpers/dateHelpers";
 
 export default function FilaGasto({
   gasto,
@@ -14,14 +15,14 @@ export default function FilaGasto({
 
 
   const { user } = useAuth();
-  const fecha =
-    gasto.createdAt?.toDate?.() ??
-    new Date(gasto.createdAt);
+  // 4.5-fecha: se muestra la fecha del gasto (fallback createdAt).
+  const fecha = fechaEfectiva(gasto);
+  const fechaTexto = fecha ? fecha.toLocaleDateString() : "";
 
   const subtitulo =
     gasto.tipo === "transferencia"
-      ? `${gasto.detalle || "Transferencia"} · ${fecha.toLocaleDateString()}`
-      : `${gasto.categoria ?? ""} · ${fecha.toLocaleDateString()}`;
+      ? `${gasto.detalle || "Transferencia"} · ${fechaTexto}`
+      : `${gasto.categoria ?? ""} · ${fechaTexto}`;
 
   // Long press handlers
   function handlePressStart() {

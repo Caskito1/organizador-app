@@ -2,6 +2,7 @@
 
 import { CATEGORIAS, UNIDADES } from "@/lib/taxonomia";
 import SectionLabel from "@/app/components/ui/SectionLabel";
+import { hoyISO } from "@/app/gastos/helpers/dateHelpers";
 
 
 export default function PasoResumen({
@@ -12,6 +13,8 @@ export default function PasoResumen({
   totalGeneral,
   tipo,
   setTipo,
+  fecha,
+  setFecha,
   groups,
   loadingGroups,
   selectedGroupId,
@@ -144,6 +147,23 @@ export default function PasoResumen({
           </span>
         </div>
       )}
+
+      {/* FECHA DEL GASTO (4.5-fecha) */}
+      <div className="flex flex-col gap-2">
+        <SectionLabel>Fecha de la compra</SectionLabel>
+
+        <input
+          type="date"
+          max={hoyISO()}
+          value={fecha}
+          onChange={(e) => setFecha(e.target.value)}
+          className="w-full bg-[rgba(255,255,255,0.04)] border border-[var(--border)] text-[var(--text)] rounded-[14px] px-4 py-3 outline-none focus:border-[var(--accent)] focus:shadow-[0_0_0_3px_rgba(138,100,255,0.35)]"
+        />
+
+        <p className="text-[11px] text-[var(--text-muted)]">
+          Una sola fecha para todos los ítems: define en qué mes cuenta la compra.
+        </p>
+      </div>
 
       {/* TIPO */}
       <div className="flex flex-col gap-2">

@@ -18,6 +18,7 @@ import BackBtn from "@/app/components/ui/BackBtn";
 
 import { useModoUnico } from "./unico/hooks/useModoUnico";
 import { submitUnico } from "./unico/helpers/submitUnico";
+import { hoyISO } from "@/app/gastos/helpers/dateHelpers";
 
 import PasoContexto from "./unico/sections/PasoContexto";
 import PasoCategoria from "./unico/sections/PasoCategoria";
@@ -74,6 +75,7 @@ export default function ModoUnico({
 
   const canSubmit =
     modo.monto &&
+    modo.fecha &&
     (!modo.esOtros ||
       modo.detalle.trim()) &&
     (modo.tipo !==
@@ -149,6 +151,8 @@ export default function ModoUnico({
 
         selectedGroupId:
           modo.selectedGroupId,
+
+        fechaISO: modo.fecha,
       });
 
       router.push("/gastos");
@@ -392,6 +396,30 @@ export default function ModoUnico({
                 className="w-full border-none bg-transparent p-0 font-sora text-[34px] font-bold tracking-[-1px] text-text outline-none focus:ring-0"
               />
             </div>
+          </div>
+
+          {/* FECHA DEL GASTO (4.5-fecha) */}
+
+          <div className="flex flex-col gap-2">
+            <SectionLabel>
+              Fecha del gasto
+            </SectionLabel>
+
+            <input
+              type="date"
+              max={hoyISO()}
+              value={modo.fecha}
+              onChange={(e) =>
+                modo.setFecha(
+                  e.target.value,
+                )
+              }
+              required
+            />
+
+            <p className="text-[11px] text-text-muted">
+              Define en qué mes cuenta este gasto.
+            </p>
           </div>
 
           {/* TIPO */}

@@ -2,9 +2,11 @@ import {
   addDoc,
   collection,
   serverTimestamp,
+  Timestamp,
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
+import { fechaLocal } from "@/app/gastos/helpers/dateHelpers";
 
 export async function submitUnico({
   user,
@@ -19,6 +21,7 @@ export async function submitUnico({
   contexto,
   tipo,
   selectedGroupId,
+  fechaISO,
 }) {
   const nombreUsuario =
     user.displayName ||
@@ -64,6 +67,10 @@ export async function submitUnico({
       tipo === "compartido"
         ? selectedGroupId
         : null,
+
+    // 4.5-fecha: fecha DEL GASTO (la elige el usuario). `createdAt` queda
+    // como auditoría inmutable.
+    fecha: Timestamp.fromDate(fechaLocal(fechaISO)),
 
     createdAt: serverTimestamp(),
   });

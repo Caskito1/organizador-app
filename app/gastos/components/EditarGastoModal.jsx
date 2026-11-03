@@ -1,14 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { Timestamp } from "firebase/firestore";
 import { CATEGORIAS, CONTEXTOS } from "@/lib/taxonomia";
 import SectionLabel from "@/app/components/ui/SectionLabel";
 import { useGroups } from "@/lib/GroupContext";
+import { fechaLocal, hoyISO, isoDeFecha } from "../helpers/dateHelpers";
 
 export default function EditarGastoModal({ gasto, onClose, onSave, onDelete }) {
   const { groups, loadingGroups } = useGroups();
 
   const [monto, setMonto] = useState(String(gasto.monto ?? ""));
+  // 4.5-fecha: un documento histórico sin `fecha` se inicializa con
+  // `createdAt`; al guardar, queda con `fecha` (upgrade perezoso, sin backfill).
+  const [fechaISO, setFechaISO] = useState(() => isoDeFecha(gasto.fecha ?? gasto.createdAt));
   const [detalle, setDetalle] = useState(gasto.detalle ?? "");
   const [catId, setCatId] = useState(gasto.categoria ?? "");
   const [tipo, setTipo] = useState(gasto.tipo ?? "personal");
@@ -16,7 +21,7 @@ export default function EditarGastoModal({ gasto, onClose, onSave, onDelete }) {
   const [loading, setLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const canSave = monto && (tipo !== "compartido" || selectedGroupId);
+  const canSave = monto && fechaISO && (tipo !== "compartido" || selectedGroupId);
 
   async function handleSave() {
     if (!canSave) return;
@@ -24,6 +29,7 @@ export default function EditarGastoModal({ gasto, onClose, onSave, onDelete }) {
     try {
       await onSave({
         monto: Number(monto),
+        fecha: Timestamp.fromDate(fechaLocal(fechaISO)),
         detalle: detalle.trim() || null,
         categoria: catId || null,
         tipo,
@@ -113,6 +119,20 @@ export default function EditarGastoModal({ gasto, onClose, onSave, onDelete }) {
                 />
               </div>
             </div>
+          </div>
+
+          {/* FECHA DEL GASTO (4.5-fecha) */}
+          <div>
+            <SectionLabel>Fecha del gasto</SectionLabel>
+            <input
+              type="date"
+              max={hoyISO()}
+              value={fechaISO}
+              onChange={(e) => setFechaISO(e.target.value)}
+            />
+            <p className="mt-1 text-[11px] text-text-muted">
+              Define en qué mes cuenta este gasto.
+            </p>
           </div>
 
           {/* DETALLE */}

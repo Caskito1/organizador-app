@@ -20,6 +20,7 @@ export default function ModoCompra({ onBack }) {
     subcatId,
     carrito,
     tipo,
+    fecha,
     selectedGroupId,
     loading,
     groups,
@@ -38,6 +39,7 @@ export default function ModoCompra({ onBack }) {
     setPaso,
     setSubcatId,
     setTipo,
+    setFecha,
     setSelectedGroupId,
 
     toggleProducto,
@@ -126,6 +128,8 @@ export default function ModoCompra({ onBack }) {
           totalGeneral={totalGeneral}
           tipo={tipo}
           setTipo={setTipo}
+          fecha={fecha}
+          setFecha={setFecha}
           groups={groups}
           loadingGroups={loadingGroups}
           selectedGroupId={selectedGroupId}

@@ -1869,8 +1869,12 @@ test("H29 — espejo con monto editado: contraparte ve el monto nuevo", async ()
   const obl = await readObl(rid, A);
   assert.equal(obl.monto, 1500, "monto editado");
 
-  const start = new Date(2026, 9, 1); // octubre 2026 (createdAt = ahora)
-  const nextStart = new Date(2026, 10, 1);
+  // `baseObl` usa Timestamp.now(): el rango tiene que ser el mes REAL, no uno
+  // fijo. Estaba hardcodeado a octubre 2026 y el caso empezó a fallar al pasar
+  // el calendario a noviembre (hallazgo 03/11/2026, ajeno a 4.5-fecha).
+  const ahora = new Date();
+  const start = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+  const nextStart = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 1);
   const obligaciones = [obl];
   const entregas = [];
 

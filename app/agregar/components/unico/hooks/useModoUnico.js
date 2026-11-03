@@ -4,6 +4,7 @@ import {
   CONTEXTOS,
   CATEGORIAS,
 } from "@/lib/taxonomia";
+import { hoyISO } from "@/app/gastos/helpers/dateHelpers";
 
 export function useModoUnico() {
   const PASOS_U = [
@@ -22,6 +23,8 @@ export function useModoUnico() {
   const [esOtros, setEsOtros] = useState(false);
   const [cantidad, setCantidad] = useState("");
   const [monto, setMonto] = useState("");
+  // 4.5-fecha: fecha del gasto (default hoy). Obligatoria en la app.
+  const [fecha, setFecha] = useState(hoyISO);
   const [detalle, setDetalle] = useState("");
   const [tipo, setTipo] = useState("personal");
   const [selectedGroupId, setSelectedGroupId] = useState("");
@@ -133,6 +136,9 @@ export function useModoUnico() {
 
     monto,
     setMonto,
+
+    fecha,
+    setFecha,
 
     detalle,
     setDetalle,

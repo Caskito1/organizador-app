@@ -5,7 +5,7 @@ import { doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { useAuth } from "@/lib/AuthContext";
 import { useGroups } from "@/lib/GroupContext";
 import { db } from "@/lib/firebase";
-import { getMonthRange } from "../helpers/dateHelpers";
+import { getMonthRange, fechaEfectiva } from "../helpers/dateHelpers";
 import subscribeGastos from "../services/subscribeGastos";
 import subscribeFixedExpenses from "../services/subscribeFixedExpenses";
 
@@ -49,11 +49,18 @@ export default function useGastos(mesActual) {
 
   const { start, end } = getMonthRange(mesActual);
 
+  // 4.5-fecha: el período se deriva de `fecha` (fecha del gasto) y, en los
+  // documentos históricos sin ese campo, de `createdAt` (fallback).
   function enMes(item) {
-    if (!item.createdAt) return false;
-    const fecha = item.createdAt?.toDate?.() ?? new Date(item.createdAt);
-    return fecha >= start && fecha <= end;
+    const fecha = fechaEfectiva(item);
+    return !!fecha && fecha >= start && fecha <= end;
   }
+
+  function tiempo(item) {
+    return fechaEfectiva(item)?.getTime() ?? 0;
+  }
+
+  const porFechaDesc = (a, b) => tiempo(b) - tiempo(a);
 
   const gastosMes = gastos.filter(enMes);
   const transferenciasMes = transferencias.filter(enMes);
@@ -73,16 +80,12 @@ export default function useGastos(mesActual) {
       usuarioNombre: t.paraNombre,
     }));
 
-  const gastosPersonales = [...gastosPersonalesBase, ...transferenciasEnviadas].sort((a, b) => {
-    const fa = a.createdAt?.toDate?.() ?? new Date(a.createdAt);
-    const fb = b.createdAt?.toDate?.() ?? new Date(b.createdAt);
-    return fb - fa;
-  });
+  const gastosPersonales = [...gastosPersonalesBase, ...transferenciasEnviadas].sort(porFechaDesc);
 
   const gastosPorGrupo = groups.map((grupo) => {
-    const gastosGrupo = gastosMes.filter(
-      (g) => g.tipo === "compartido" && g.groupId === grupo.id,
-    );
+    const gastosGrupo = gastosMes
+      .filter((g) => g.tipo === "compartido" && g.groupId === grupo.id)
+      .sort(porFechaDesc);
     const totalGrupo = gastosGrupo.reduce((a, g) => a + Number(g.monto || 0), 0);
     const totalUsuario = gastosGrupo
       .filter((g) => g.usuario === user?.uid)

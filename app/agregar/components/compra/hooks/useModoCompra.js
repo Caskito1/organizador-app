@@ -3,6 +3,7 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 
 import { CATEGORIAS } from "@/lib/taxonomia";
+import { hoyISO } from "@/app/gastos/helpers/dateHelpers";
 
 import { useAuth } from "@/lib/AuthContext";
 import { useGroups } from "@/lib/GroupContext";
@@ -44,6 +45,10 @@ export default function useModoCompra({ onBack }) {
 
   const [tipo, setTipo] =
     useState("personal");
+
+  // 4.5-fecha: una sola fecha para toda la compra (no por ítem).
+  const [fecha, setFecha] =
+    useState(hoyISO);
 
   const [
     selectedGroupId,
@@ -94,6 +99,7 @@ export default function useModoCompra({ onBack }) {
 
   const canFinish =
     totalItems > 0 &&
+    !!fecha &&
     Object.values(carrito).every(
       (it) =>
         it.monto &&
@@ -210,6 +216,7 @@ export default function useModoCompra({ onBack }) {
       user,
       tipo,
       selectedGroupId,
+      fechaISO: fecha,
     });
 
     router.push("/gastos");
@@ -228,6 +235,7 @@ export default function useModoCompra({ onBack }) {
     subcatId,
     carrito,
     tipo,
+    fecha,
     selectedGroupId,
     loading,
     groups,
@@ -246,6 +254,7 @@ export default function useModoCompra({ onBack }) {
     setPaso,
     setSubcatId,
     setTipo,
+    setFecha,
     setSelectedGroupId,
 
     // actions
