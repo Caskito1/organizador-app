@@ -19,7 +19,6 @@ export default function useGastos(mesActual) {
 
   const [loading, setLoading] = useState(true);
   const [gastos, setGastos] = useState([]);
-  const [transferencias, setTransferencias] = useState([]);
   const [fixedEntries, setFixedEntries] = useState([]);
   const [openSection, setOpenSection] = useState(null);
   const [editingGasto, setEditingGasto] = useState(null);
@@ -28,9 +27,8 @@ export default function useGastos(mesActual) {
     if (!user || loadingGroups) return;
     const unsubscribe = subscribeGastos({
       user, groups,
-      onChange: ({ gastos, transferencias }) => {
+      onChange: ({ gastos }) => {
         setGastos(gastos);
-        setTransferencias(transferencias);
       },
       onLoaded: () => setLoading(false),
     });
@@ -61,24 +59,12 @@ export default function useGastos(mesActual) {
   }
 
   const gastosMes = gastos.filter(enMes);
-  const transferenciasMes = transferencias.filter(enMes);
 
   const gastosPersonalesBase = gastosMes.filter(
     (g) => g.tipo === "personal" && g.usuario === user?.uid,
   );
 
-  const transferenciasEnviadas = transferenciasMes
-    .filter((t) => t.deUid === user?.uid)
-    .map((t) => ({
-      ...t,
-      id: "transfer-" + t.id,
-      tipo: "transferencia",
-      producto: "Transferencia",
-      detalle: t.concepto === "otros" ? t.detalle : t.concepto,
-      usuarioNombre: t.paraNombre,
-    }));
-
-  const gastosPersonales = [...gastosPersonalesBase, ...transferenciasEnviadas].sort(porFechaDesc);
+  const gastosPersonales = gastosPersonalesBase.sort(porFechaDesc);
 
   const gastosPorGrupo = groups.map((grupo) => {
     const gastosGrupo = gastosMes
@@ -127,7 +113,7 @@ const fixedPersonales = fixedEntries
   const totalPersonales = gastosPersonales.reduce((a, g) => a + Number(g.monto || 0), 0);
   const totalGruposUsuario = gastosPorGrupo.reduce((a, g) => a + g.totalUsuario, 0);
 
-  // Total = personales + transferencias enviadas + mi parte de grupos + fijos
+  // Total = personales + mi parte de grupos + fijos
   const totalGastos = totalPersonales + totalGruposUsuario + totalFixed;
 
   const totalTransacciones =

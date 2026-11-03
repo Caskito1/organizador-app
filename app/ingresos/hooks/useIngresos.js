@@ -28,11 +28,6 @@ export default function useIngresos(
   const [ingresos, setIngresos] =
     useState([]);
 
-  const [
-    transferenciasRecibidas,
-    setTransferenciasRecibidas,
-  ] = useState([]);
-
   const [editingIngreso, setEditingIngreso] =
     useState(null);
 
@@ -42,7 +37,6 @@ export default function useIngresos(
       bandas: true,
       freelance: true,
       otros: true,
-      transferencias: true,
     });
 
   useEffect(() => {
@@ -54,24 +48,15 @@ export default function useIngresos(
       subscribeIngresos({
         uid: user.uid,
 
-        selectedMonth,
-
-        onData: ({
-          ingresos,
-          transferencias,
-        }) => {
+        onData: ({ ingresos }) => {
           setIngresos(ingresos);
-
-          setTransferenciasRecibidas(
-            transferencias,
-          );
 
           setLoading(false);
         },
       });
 
     return () => unsubscribe?.();
-  }, [user?.uid, selectedMonth]);
+  }, [user?.uid]);
 
   // 4.5-fecha: el período se deriva en cliente con `fechaEfectiva`
   // (`fecha` ?? `createdAt`) — la query ya no filtra por fecha, así que los
@@ -118,32 +103,16 @@ export default function useIngresos(
       );
     }, [ingresosMes]);
 
+  // 4.5: solo ingresos reales. Las transferencias legacy ya no suman (I-1).
   const totalIngresos =
     useMemo(() => {
-      const totalIngresosDocs =
-        ingresosMes.reduce(
-          (a, i) =>
-            a +
-            Number(i.monto || 0),
-          0,
-        );
-
-      const totalTransferencias =
-        transferenciasRecibidas.reduce(
-          (a, t) =>
-            a +
-            Number(t.monto || 0),
-          0,
-        );
-
-      return (
-        totalIngresosDocs +
-        totalTransferencias
+      return ingresosMes.reduce(
+        (a, i) =>
+          a +
+          Number(i.monto || 0),
+        0,
       );
-    }, [
-      ingresosMes,
-      transferenciasRecibidas,
-    ]);
+    }, [ingresosMes]);
 
   function toggleSection(key) {
     setOpenSections((prev) => ({
@@ -174,8 +143,6 @@ export default function useIngresos(
     ingresosBandas,
     ingresosFreelance,
     ingresosOtros,
-
-    transferenciasRecibidas,
 
     totalIngresos,
 

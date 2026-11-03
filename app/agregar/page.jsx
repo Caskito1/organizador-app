@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 
 import ModoUnico from "./components/ModoUnico";
 import ModoCompra from "./components/ModoCompra";
-import ModoTransferencia from "./components/ModoTransferencia";
 import ModoIngreso from "./components/ModoIngreso";
 import ReintegroModal from "./components/reintegros/ReintegroModal";
 
@@ -78,19 +77,6 @@ export default function Agregar() {
               </p>
             </button>
 
-            {/* Transferencia */}
-            {/* <button
-              onClick={() => setModo("transferencia")}
-              className="w-full rounded-[18px] border border-[rgba(138,100,255,0.3)] bg-glass px-5 py-5 text-left backdrop-blur-[16px] transition-all duration-200 hover:border-accent2"
-            >
-              <p className="mb-1 font-sora text-[15px] font-bold text-text">
-                Transferencia
-              </p>
-
-              <p className="text-[13px] leading-[1.5] text-text-muted">
-                Registrá un pago entre integrantes del grupo.
-              </p>
-            </button> */}
           </SectionBlock>
 
           {/* Separador */}
@@ -159,10 +145,6 @@ export default function Agregar() {
 
       {modo === "compra" && (
         <ModoCompra onBack={() => setModo(null)} />
-      )}
-
-      {modo === "transferencia" && (
-        <ModoTransferencia onBack={() => setModo(null)} />
       )}
 
       {modo === "ingreso" && (

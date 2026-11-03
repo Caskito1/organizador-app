@@ -10,27 +10,14 @@ import {
 
 import { db } from "@/lib/firebase";
 
+// 4.5: una sola query. Los ingresos ya no comparten suscripción con
+// `transferencias` (flujo retirado). El período se filtra y ordena en cliente
+// con `fechaEfectiva` (4.5-fecha): un `where("fecha", …)` excluiría los
+// documentos históricos sin `fecha`.
 export function subscribeIngresos({
   uid,
-  selectedMonth,
   onData,
 }) {
-  const start = new Date(
-    selectedMonth.getFullYear(),
-    selectedMonth.getMonth(),
-    1,
-  );
-
-  const end = new Date(
-    selectedMonth.getFullYear(),
-    selectedMonth.getMonth() + 1,
-    1,
-  );
-
-  // 4.5-fecha: SIN rango por fecha en la query. El período se deriva en
-  // cliente con `fechaEfectiva` (fecha ?? createdAt): un where("fecha", …)
-  // excluiría los documentos históricos sin `fecha` (fallback roto).
-  // Las transferencias conservan su rango por `createdAt` (sin cambios).
   const ingresosQuery = query(
     collection(db, "ingresos"),
 
@@ -39,85 +26,19 @@ export function subscribeIngresos({
     orderBy("createdAt", "desc"),
   );
 
-  const transferenciasQuery = query(
-    collection(db, "transferencias"),
-
-    where(
-      "paraUid",
-      "==",
-      uid,
-    ),
-
-    where(
-      "createdAt",
-      ">=",
-      start,
-    ),
-
-    where(
-      "createdAt",
-      "<",
-      end,
-    ),
-
-    orderBy("createdAt", "desc"),
-  );
-
-  let ingresos = [];
-
-  let transferencias = [];
-
-  let ingresosLoaded = false;
-
-  let transferenciasLoaded = false;
-
-  function emitIfReady() {
-    if (
-      ingresosLoaded &&
-      transferenciasLoaded
-    ) {
+  const unsubIngresos = onSnapshot(
+    ingresosQuery,
+    (snap) => {
       onData({
-        ingresos,
-        transferencias,
+        ingresos: snap.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })),
       });
-    }
-  }
-
-  const unsubIngresos =
-    onSnapshot(
-      ingresosQuery,
-      (snap) => {
-        ingresos = snap.docs.map(
-          (doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }),
-        );
-
-        ingresosLoaded = true;
-
-        emitIfReady();
-      },
-    );
-
-  const unsubTransferencias =
-    onSnapshot(
-      transferenciasQuery,
-      (snap) => {
-        transferencias =
-          snap.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-
-        transferenciasLoaded = true;
-
-        emitIfReady();
-      },
-    );
+    },
+  );
 
   return () => {
     unsubIngresos();
-    unsubTransferencias();
   };
 }

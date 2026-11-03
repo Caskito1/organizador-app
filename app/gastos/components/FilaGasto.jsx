@@ -19,10 +19,7 @@ export default function FilaGasto({
   const fecha = fechaEfectiva(gasto);
   const fechaTexto = fecha ? fecha.toLocaleDateString() : "";
 
-  const subtitulo =
-    gasto.tipo === "transferencia"
-      ? `${gasto.detalle || "Transferencia"} · ${fechaTexto}`
-      : `${gasto.categoria ?? ""} · ${fechaTexto}`;
+  const subtitulo = `${gasto.categoria ?? ""} · ${fechaTexto}`;
 
   // Long press handlers
   function handlePressStart() {
@@ -35,7 +32,6 @@ export default function FilaGasto({
     clearTimeout(longPressTimer.current);
   }
 
-  const esTransferencia = gasto.tipo === "transferencia";
 const puedeEditar =
   gasto.tipo === "personal" ||
   gasto.usuario === user?.uid;
@@ -61,7 +57,7 @@ const puedeEditar =
 
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Botón ⋯ — visible en hover desktop, oculto en mobile */}
-         {!esTransferencia && puedeEditar && (
+         {puedeEditar && (
             <button
               onClick={(e) => { e.stopPropagation(); setMenuOpen(true); }}
               className="opacity-0 group-hover:opacity-100 transition-opacity w-[24px] h-[24px] flex items-center justify-center rounded-[6px] text-text-muted hover:text-text hover:bg-white/8"
@@ -80,7 +76,7 @@ const puedeEditar =
       </div>
 
       {/* Menú contextual */}
-      {menuOpen && !esTransferencia && puedeEditar && (
+      {menuOpen && puedeEditar && (
         <>
           {/* Overlay para cerrar */}
           <div

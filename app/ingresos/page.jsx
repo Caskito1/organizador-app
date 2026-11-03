@@ -12,7 +12,6 @@ import SueldoSection from "./sections/SueldoSection";
 import BandasSection from "./sections/BandasSection";
 import FreelanceSection from "./sections/FreelanceSection";
 import OtrosSection from "./sections/OtrosSection";
-import TransferenciasIngresosSection from "./sections/TransferenciasIngresosSection";
 import EditarIngresoModal from "./components/EditarIngresoModal";
 
 import LoadingScreen from "@/app/components/ui/LoadingScreen";
@@ -36,8 +35,6 @@ export default function IngresosPage() {
     ingresosBandas,
     ingresosFreelance,
     ingresosOtros,
-
-    transferenciasRecibidas,
 
     totalIngresos,
 
@@ -74,8 +71,7 @@ export default function IngresosPage() {
             ingresosSueldo.length +
             ingresosBandas.length +
             ingresosFreelance.length +
-            ingresosOtros.length +
-            transferenciasRecibidas.length
+            ingresosOtros.length
           }
         />
 
@@ -129,19 +125,6 @@ export default function IngresosPage() {
             }
           />
 
-          {/* <TransferenciasIngresosSection
-            transferencias={
-              transferenciasRecibidas
-            }
-            open={
-              openSections.transferencias
-            }
-            onToggle={() =>
-              toggleSection(
-                "transferencias",
-              )
-            }
-          /> */}
         </div>
 
         <MonthSelectorModal
