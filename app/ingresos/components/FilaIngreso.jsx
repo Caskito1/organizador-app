@@ -2,6 +2,9 @@
 
 import { useRef, useState } from "react";
 
+import MenuFlotante, {
+  calcularPosicionMenu,
+} from "@/app/components/ui/MenuFlotante";
 import { fechaEfectiva } from "@/app/gastos/helpers/dateHelpers";
 
 export default function FilaIngreso({
@@ -11,7 +14,9 @@ export default function FilaIngreso({
   compact = false,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState(null);
   const longPressTimer = useRef(null);
+  const anchorRef = useRef(null);
 
   // 4.5-fecha: se muestra la fecha del ingreso (fallback createdAt).
   const fecha = fechaEfectiva(ingreso);
@@ -21,11 +26,16 @@ export default function FilaIngreso({
 
   const puedeEditar = !!onEdit || !!onDelete;
 
+  function abrirMenu() {
+    setMenuPos(calcularPosicionMenu(anchorRef.current));
+    setMenuOpen(true);
+  }
+
   function handlePressStart() {
     if (!puedeEditar) return;
 
     longPressTimer.current = setTimeout(
-      () => setMenuOpen(true),
+      () => abrirMenu(),
       500,
     );
   }
@@ -36,6 +46,7 @@ export default function FilaIngreso({
 
   return (
     <div
+      ref={anchorRef}
       className={`relative border-b ${
         compact
           ? "border-[rgba(138,100,255,0.08)] last:border-none"
@@ -73,7 +84,7 @@ export default function FilaIngreso({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setMenuOpen(true);
+                abrirMenu();
               }}
               className="opacity-0 group-hover:opacity-100 transition-opacity w-[24px] h-[24px] flex items-center justify-center rounded-[6px] text-text-muted hover:text-text hover:bg-white/8"
             >
@@ -98,44 +109,41 @@ export default function FilaIngreso({
         </div>
       </div>
 
-      {/* Menú contextual (patrón de FilaGasto) */}
-      {menuOpen && puedeEditar && (
-        <>
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setMenuOpen(false)}
-          />
+      {/* Menú contextual (portal: no lo recorta ni lo tapa el acordeón) */}
+      {puedeEditar && (
+        <MenuFlotante
+          open={menuOpen}
+          pos={menuPos}
+          onClose={() => setMenuOpen(false)}
+        >
+          {onEdit && (
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onEdit(ingreso);
+              }}
+              className="flex items-center gap-2 w-full px-4 py-[11px] text-left text-[14px] text-text hover:bg-white/5 transition-colors"
+            >
+              ✏ Editar
+            </button>
+          )}
 
-          <div className="absolute right-0 top-[36px] z-50 min-w-[160px] rounded-[14px] border border-border bg-[rgba(18,14,28,0.97)] backdrop-blur-[16px] overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-            {onEdit && (
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  onEdit(ingreso);
-                }}
-                className="flex items-center gap-2 w-full px-4 py-[11px] text-left text-[14px] text-text hover:bg-white/5 transition-colors"
-              >
-                ✏ Editar
-              </button>
-            )}
+          {onEdit && onDelete && (
+            <div className="h-[1px] bg-border mx-3" />
+          )}
 
-            {onEdit && onDelete && (
-              <div className="h-[1px] bg-border mx-3" />
-            )}
-
-            {onDelete && (
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  onDelete(ingreso);
-                }}
-                className="flex items-center gap-2 w-full px-4 py-[11px] text-left text-[14px] text-[var(--negative)] hover:bg-[rgba(255,100,100,0.08)] transition-colors"
-              >
-                🗑 Eliminar
-              </button>
-            )}
-          </div>
-        </>
+          {onDelete && (
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onDelete(ingreso);
+              }}
+              className="flex items-center gap-2 w-full px-4 py-[11px] text-left text-[14px] text-[var(--negative)] hover:bg-[rgba(255,100,100,0.08)] transition-colors"
+            >
+              🗑 Eliminar
+            </button>
+          )}
+        </MenuFlotante>
       )}
     </div>
   );

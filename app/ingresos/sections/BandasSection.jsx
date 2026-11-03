@@ -70,13 +70,10 @@ export default function BandasSection({
                 0,
               );
 
-            // Sin overflow-hidden: el menú ⋯ de FilaIngreso (absolute) se
-            // recortaba con un solo ítem. Los hijos van con padding, así que
-            // las esquinas redondeadas no necesitan recorte.
             return (
               <div
                 key={banda}
-                className="rounded-[16px] border border-[rgba(138,100,255,0.12)] bg-[rgba(255,255,255,0.02)]"
+                className="rounded-[16px] border border-[rgba(138,100,255,0.12)] bg-[rgba(255,255,255,0.02)] overflow-hidden"
               >
                 {/* HEADER BANDA */}
 
