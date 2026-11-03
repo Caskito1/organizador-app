@@ -5,7 +5,11 @@ import { doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { useAuth } from "@/lib/AuthContext";
 import { useGroups } from "@/lib/GroupContext";
 import { db } from "@/lib/firebase";
-import { getMonthRange, fechaEfectiva } from "../helpers/dateHelpers";
+import {
+  getMonthRange,
+  fechaEfectiva,
+  porFechaDesc,
+} from "../helpers/dateHelpers";
 import subscribeGastos from "../services/subscribeGastos";
 import subscribeFixedExpenses from "../services/subscribeFixedExpenses";
 
@@ -55,12 +59,6 @@ export default function useGastos(mesActual) {
     const fecha = fechaEfectiva(item);
     return !!fecha && fecha >= start && fecha <= end;
   }
-
-  function tiempo(item) {
-    return fechaEfectiva(item)?.getTime() ?? 0;
-  }
-
-  const porFechaDesc = (a, b) => tiempo(b) - tiempo(a);
 
   const gastosMes = gastos.filter(enMes);
   const transferenciasMes = transferencias.filter(enMes);

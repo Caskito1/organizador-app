@@ -1,5 +1,7 @@
 import Acordeon from "@/app/gastos/components/Acordeon";
 
+import FilaIngreso from "../components/FilaIngreso";
+
 // Fuente unica de los labels. Los ids son los canonicos que escribe
 // useModoIngreso y no se cambian. Duplicado por decision de alcance
 // de 2.3: no se extrae a una taxonomia compartida.
@@ -21,6 +23,8 @@ export default function BandasSection({
   ingresos,
   open,
   onToggle,
+  onEdit,
+  onDelete,
 }) {
   const bandas = ingresos.reduce(
     (acc, ingreso) => {
@@ -89,41 +93,15 @@ export default function BandasSection({
                 {/* ITEMS */}
 
                 <div className="flex flex-col px-4 py-1">
-                  {items.map((i) => {
-                    const fecha =
-                      i.createdAt
-                        ?.toDate?.() ??
-                      new Date(
-                        i.createdAt,
-                      );
-
-                    return (
-                      <div
-                        key={i.id}
-                        className="flex items-center justify-between py-[10px] border-b border-[rgba(138,100,255,0.08)] last:border-none"
-                      >
-                        <div>
-                          <p className="text-[13px] text-text">
-                            {i.detalle ||
-                              "Ingreso"}
-                          </p>
-
-                          <p className="mt-[2px] text-[11px] text-text-muted">
-                            {fecha.toLocaleDateString()}
-                          </p>
-                        </div>
-
-                        <p className="font-sora text-[13px] font-bold text-text">
-                          $
-                          {Number(
-                            i.monto,
-                          ).toLocaleString(
-                            "es-AR",
-                          )}
-                        </p>
-                      </div>
-                    );
-                  })}
+                  {items.map((i) => (
+                    <FilaIngreso
+                      key={i.id}
+                      ingreso={i}
+                      compact
+                      onEdit={onEdit}
+                      onDelete={onDelete}
+                    />
+                  ))}
                 </div>
               </div>
             );

@@ -6,6 +6,8 @@ export default function OtrosSection({
   ingresos,
   open,
   onToggle,
+  onEdit,
+  onDelete,
 }) {
   return (
     <Acordeon
@@ -23,6 +25,8 @@ export default function OtrosSection({
         <FilaIngreso
           key={i.id}
           ingreso={i}
+          onEdit={onEdit}
+          onDelete={onDelete}
         />
       ))}
     </Acordeon>

@@ -1,6 +1,7 @@
 // components/ingresos/sections/PasoDetalleIngreso.jsx
 
 import SectionLabel from "@/app/components/ui/SectionLabel";
+import { hoyISO } from "@/app/gastos/helpers/dateHelpers";
 
 export default function PasoDetalleIngreso({
   modo,
@@ -92,6 +93,30 @@ export default function PasoDetalleIngreso({
             className="w-full border-none bg-transparent p-0 font-sora text-[34px] font-bold tracking-[-1px] text-text outline-none focus:ring-0"
           />
         </div>
+      </div>
+
+      {/* FECHA DEL INGRESO (4.5-fecha) */}
+
+      <div className="flex flex-col gap-2">
+        <SectionLabel>
+          Fecha del ingreso
+        </SectionLabel>
+
+        <input
+          type="date"
+          max={hoyISO()}
+          value={modo.fecha}
+          onChange={(e) =>
+            modo.setFecha(
+              e.target.value,
+            )
+          }
+          required
+        />
+
+        <p className="text-[11px] text-text-muted">
+          Define en qué mes cuenta este ingreso.
+        </p>
       </div>
 
       {/* SUBMIT */}

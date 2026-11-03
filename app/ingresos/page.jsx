@@ -13,6 +13,7 @@ import BandasSection from "./sections/BandasSection";
 import FreelanceSection from "./sections/FreelanceSection";
 import OtrosSection from "./sections/OtrosSection";
 import TransferenciasIngresosSection from "./sections/TransferenciasIngresosSection";
+import EditarIngresoModal from "./components/EditarIngresoModal";
 
 import LoadingScreen from "@/app/components/ui/LoadingScreen";
 import MonthSelectorModal from "@/app/gastos/components/MonthNavigator";
@@ -42,6 +43,11 @@ export default function IngresosPage() {
 
     openSections,
     toggleSection,
+
+    editingIngreso,
+    setEditingIngreso,
+    editarIngreso,
+    eliminarIngreso,
   } = useIngresos(selectedMonth);
 
   if (loading) {
@@ -81,6 +87,10 @@ export default function IngresosPage() {
             onToggle={() =>
               toggleSection("sueldo")
             }
+            onEdit={setEditingIngreso}
+            onDelete={(i) =>
+              eliminarIngreso(i.id)
+            }
           />
 
           <BandasSection
@@ -88,6 +98,10 @@ export default function IngresosPage() {
             open={openSections.bandas}
             onToggle={() =>
               toggleSection("bandas")
+            }
+            onEdit={setEditingIngreso}
+            onDelete={(i) =>
+              eliminarIngreso(i.id)
             }
           />
 
@@ -97,6 +111,10 @@ export default function IngresosPage() {
             onToggle={() =>
               toggleSection("freelance")
             }
+            onEdit={setEditingIngreso}
+            onDelete={(i) =>
+              eliminarIngreso(i.id)
+            }
           />
 
           <OtrosSection
@@ -104,6 +122,10 @@ export default function IngresosPage() {
             open={openSections.otros}
             onToggle={() =>
               toggleSection("otros")
+            }
+            onEdit={setEditingIngreso}
+            onDelete={(i) =>
+              eliminarIngreso(i.id)
             }
           />
 
@@ -132,6 +154,22 @@ export default function IngresosPage() {
             setSelectedMonth(date)
           }
         />
+
+        {editingIngreso && (
+          <EditarIngresoModal
+            ingreso={editingIngreso}
+            onClose={() =>
+              setEditingIngreso(null)
+            }
+            onSave={(payload) =>
+              editarIngreso(
+                editingIngreso.id,
+                payload,
+              )
+            }
+            onDelete={eliminarIngreso}
+          />
+        )}
       </div>
     </Appshell>
   );

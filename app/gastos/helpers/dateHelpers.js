@@ -46,6 +46,14 @@ export function fechaEfectiva(item) {
   return aDate(item?.fecha) ?? aDate(item?.createdAt);
 }
 
+// Orden por fecha efectiva descendente (gastos e ingresos).
+export function porFechaDesc(a, b) {
+  return (
+    (fechaEfectiva(b)?.getTime() ?? 0) -
+    (fechaEfectiva(a)?.getTime() ?? 0)
+  );
+}
+
 // 'YYYY-MM-DD' (input date) → Date a medianoche LOCAL del día elegido.
 // Misma convención que DevolucionModal (reintegros): un parseo UTC correría
 // el día —y el mes— en el borde. El caller lo envuelve en Timestamp.

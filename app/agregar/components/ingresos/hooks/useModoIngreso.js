@@ -4,6 +4,8 @@
 
 import { useState } from "react";
 
+import { hoyISO } from "@/app/gastos/helpers/dateHelpers";
+
 export const BANDAS = [
   {
     id: "laventolera",
@@ -39,6 +41,10 @@ export function useModoIngreso() {
 
   const [detalle, setDetalle] =
     useState("");
+
+  // 4.5-fecha: fecha del ingreso (default hoy). Obligatoria en la app.
+  const [fecha, setFecha] =
+    useState(hoyISO);
 
   function seleccionarTipo(id) {
     setTipo(id);
@@ -88,6 +94,9 @@ const tipoLabel = {
 
     detalle,
     setDetalle,
+
+    fecha,
+    setFecha,
 
     tipoLabel,
     subtipoLabel,

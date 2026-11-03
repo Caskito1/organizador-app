@@ -4,9 +4,11 @@ import {
   addDoc,
   collection,
   serverTimestamp,
+  Timestamp,
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
+import { fechaLocal } from "@/app/gastos/helpers/dateHelpers";
 
 export async function submitIngreso({
   user,
@@ -17,6 +19,8 @@ export async function submitIngreso({
   detalle,
 
   monto,
+
+  fechaISO,
 }) {
   const nombreUsuario =
     user.displayName ||
@@ -39,6 +43,12 @@ export async function submitIngreso({
 
       usuarioNombre:
         nombreUsuario,
+
+      // 4.5-fecha: fecha DEL INGRESO (la elige el usuario). `createdAt`
+      // queda como auditoría inmutable.
+      fecha: Timestamp.fromDate(
+        fechaLocal(fechaISO),
+      ),
 
       createdAt: serverTimestamp(),
     },

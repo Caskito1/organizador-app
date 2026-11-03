@@ -47,6 +47,7 @@ const detalleRequired =
 
 const canSubmit =
   modo.monto &&
+  modo.fecha &&
   (!detalleRequired ||
     modo.detalle.trim());
 
@@ -75,6 +76,8 @@ const canSubmit =
         detalle: modo.detalle,
 
         monto: modo.monto,
+
+        fechaISO: modo.fecha,
       });
 
       router.push("/ingresos");

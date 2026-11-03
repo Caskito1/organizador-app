@@ -6,6 +6,8 @@ export default function SueldoSection({
   ingresos,
   open,
   onToggle,
+  onEdit,
+  onDelete,
 }) {
     
     
@@ -24,6 +26,8 @@ export default function SueldoSection({
         <FilaIngreso
           key={i.id}
           ingreso={i}
+          onEdit={onEdit}
+          onDelete={onDelete}
         />
       ))}
     </Acordeon>

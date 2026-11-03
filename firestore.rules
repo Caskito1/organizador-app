@@ -39,8 +39,9 @@ service cloud.firestore {
     // 4.5-fecha: `fecha` es OPCIONAL en reglas (compatibilidad con clientes
     // viejos); la app nueva siempre la escribe. Rango razonable: desde
     // 2020-01-01 hasta 1 día después de `request.time` (tolera el desfase de
-    // zona de una fecha local guardada a medianoche).
-    function fechaGastoValida(f) {
+    // zona de una fecha local guardada a medianoche). Aplica a gastos e
+    // ingresos.
+    function fechaValida(f) {
       return f is timestamp
         && f >= timestamp.date(2020, 1, 1)
         && f <= request.time + duration.value(1, 'd');
@@ -95,7 +96,7 @@ service cloud.firestore {
         // 4.5-fecha: fecha del gasto (opcional por compatibilidad).
         && (
           !('fecha' in request.resource.data)
-          || fechaGastoValida(request.resource.data.fecha)
+          || fechaValida(request.resource.data.fecha)
         )
         // 4.5-fecha: `createdAt` es auditoría y debe ser el reloj del server.
         && request.resource.data.createdAt == request.time;
@@ -117,7 +118,7 @@ service cloud.firestore {
         // válido también después del update.
         && (
           !('fecha' in request.resource.data)
-          || fechaGastoValida(request.resource.data.fecha)
+          || fechaValida(request.resource.data.fecha)
         );
     }
 
@@ -127,11 +128,37 @@ service cloud.firestore {
 
     match /ingresos/{ingresoId} {
 
-      allow read, update, delete: if signedIn()
+      allow read: if signedIn()
         && resource.data.usuario == request.auth.uid;
 
       allow create: if signedIn()
-        && request.resource.data.usuario == request.auth.uid;
+        && request.resource.data.usuario == request.auth.uid
+        // 4.5-fecha: fecha del ingreso (opcional por compatibilidad).
+        && (
+          !('fecha' in request.resource.data)
+          || fechaValida(request.resource.data.fecha)
+        )
+        // 4.5-fecha: `createdAt` es auditoría y debe ser el reloj del server.
+        && request.resource.data.createdAt == request.time;
+
+      // 4.5-fecha: update y delete se separan porque en un delete
+      // `request.resource` es null (leerlo denegaría el borrado).
+      allow delete: if signedIn()
+        && resource.data.usuario == request.auth.uid;
+
+      allow update: if signedIn()
+        && resource.data.usuario == request.auth.uid
+        // 4.5-fecha: `createdAt` inmutable. Forma defensiva: un documento
+        // histórico sin `createdAt` sigue editable.
+        && (
+          !('createdAt' in resource.data)
+          || request.resource.data.createdAt == resource.data.createdAt
+        )
+        // 4.5-fecha: si el documento tiene `fecha`, debe ser válida.
+        && (
+          !('fecha' in request.resource.data)
+          || fechaValida(request.resource.data.fecha)
+        );
     }
 
     // ─────────────────────────────

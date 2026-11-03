@@ -27,22 +27,14 @@ export function subscribeIngresos({
     1,
   );
 
+  // 4.5-fecha: SIN rango por fecha en la query. El período se deriva en
+  // cliente con `fechaEfectiva` (fecha ?? createdAt): un where("fecha", …)
+  // excluiría los documentos históricos sin `fecha` (fallback roto).
+  // Las transferencias conservan su rango por `createdAt` (sin cambios).
   const ingresosQuery = query(
     collection(db, "ingresos"),
 
     where("usuario", "==", uid),
-
-    where(
-      "createdAt",
-      ">=",
-      start,
-    ),
-
-    where(
-      "createdAt",
-      "<",
-      end,
-    ),
 
     orderBy("createdAt", "desc"),
   );
