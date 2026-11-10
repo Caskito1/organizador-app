@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Organizador Personal — AppFinanciera
 
-## Getting Started
+Aplicación web personal para registrar y analizar ingresos, gastos, gastos fijos y reintegros, con soporte para gastos compartidos entre grupos.
 
-First, run the development server:
+> Proyecto de portfolio. No incluye datos reales ni credenciales: la configuración se hace con variables de entorno locales.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Funcionalidades
+
+- Autenticación con Firebase Auth.
+- Inicio con resumen y accesos rápidos.
+- Ingresos por sueldo, bandas, freelance y otros.
+- Gastos variables y gastos fijos, con navegación por mes y totales.
+- Reintegros: obligaciones, entregas, devoluciones y condonaciones.
+- Gastos compartidos por grupo.
+- Taxonomías de categorías y gastos fijos.
+- PWA instalable.
+
+## Stack
+
+- Next.js 16 (App Router) + React 19
+- Firebase Auth + Firestore
+- Tailwind CSS 4
+- next-pwa
+- Tests con Node Test Runner y Firebase Emulator Suite
+
+## Estructura
+
+```
+app/
+├── home/          resumen y accesos rápidos
+├── ingresos/      ingresos por fuente
+├── gastos/        gastos variables y fijos
+├── gastos-fijos/  gastos fijos y balance
+├── reintegros/    obligaciones y entregas
+├── agregar/       alta de compras, ingresos y movimientos
+└── login/         autenticación
+lib/               Firebase, auth, grupos y taxonomías
+tests/             unitarios, reglas de Firestore y harness
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Puesta en marcha
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Abrir `http://localhost:3000`.
 
-## Learn More
+### Variables de entorno
 
-To learn more about Next.js, take a look at the following resources:
+Crear `.env.local` (no se versiona):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```dotenv
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Tests
 
-## Deploy on Vercel
+```bash
+npm run test:gastos
+npm run test:rules
+npm run harness:reintegros
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Los tests de reglas y el harness requieren Firebase Emulator Suite.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Seguridad
+
+- Las reglas de Firestore están versionadas en `firestore.rules`.
+- Las claves de administración y los archivos `.env*` no se versionan.
+- La API key web de Firebase es pública por diseño; se restringe por dominio en Google Cloud.
+
+## Capturas
+
+_(pendiente: agregar en `docs/screenshots/`)_
