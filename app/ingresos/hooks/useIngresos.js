@@ -16,6 +16,7 @@ import {
 } from "@/app/gastos/helpers/dateHelpers";
 
 import { subscribeIngresos } from "../services/subscribeIngresos";
+import { UYU, USD, sumarPorMoneda } from "../helpers/ingresosMoneda";
 
 export default function useIngresos(
   selectedMonth,
@@ -104,15 +105,26 @@ export default function useIngresos(
     }, [ingresosMes]);
 
   // 4.5: solo ingresos reales. Las transferencias legacy ya no suman (I-1).
-  const totalIngresos =
+  // 5.0 (D-4/D-9): DOS totales que nunca se suman entre sí. `monedaEfectiva`
+  // (dentro de sumarPorMoneda) resuelve el fallback a UYU de los documentos
+  // anteriores a 5.0 (D-6).
+  const totalIngresosUYU =
     useMemo(() => {
-      return ingresosMes.reduce(
-        (a, i) =>
-          a +
-          Number(i.monto || 0),
-        0,
+      return sumarPorMoneda(
+        ingresosMes,
+        UYU,
       );
     }, [ingresosMes]);
+
+  const totalIngresosUSD =
+    useMemo(() => {
+      return sumarPorMoneda(
+        ingresosMes,
+        USD,
+      );
+    }, [ingresosMes]);
+
+  const hayUSD = totalIngresosUSD > 0;
 
   function toggleSection(key) {
     setOpenSections((prev) => ({
@@ -144,7 +156,9 @@ export default function useIngresos(
     ingresosFreelance,
     ingresosOtros,
 
-    totalIngresos,
+    totalIngresosUYU,
+    totalIngresosUSD,
+    hayUSD,
 
     openSections,
     toggleSection,

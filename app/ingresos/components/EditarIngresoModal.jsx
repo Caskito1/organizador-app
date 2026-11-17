@@ -4,7 +4,14 @@ import { useState } from "react";
 import { Timestamp } from "firebase/firestore";
 
 import SectionLabel from "@/app/components/ui/SectionLabel";
-import { BANDAS } from "@/app/agregar/components/ingresos/hooks/useModoIngreso";
+import {
+  BANDAS,
+  SUELDOS,
+} from "@/app/agregar/components/ingresos/hooks/useModoIngreso";
+import {
+  monedaDeSubtipo,
+  simboloDe,
+} from "@/app/ingresos/helpers/ingresosMoneda";
 import {
   fechaLocal,
   hoyISO,
@@ -55,17 +62,54 @@ export default function EditarIngresoModal({
   const detalleRequired =
     tipo === "freelance" || tipo === "otros";
 
+  // 5.0: la moneda se DERIVA del subtipo seleccionado (no de la guardada),
+  // así el prefijo del importe cambia en cuanto se elige «Sueldo en dólares».
+  const monedaDeSeleccion = (tipoSel, subtipoSel) => {
+    const sub =
+      tipoSel === "sueldo" || tipoSel === "banda"
+        ? subtipoSel || null
+        : null;
+    return monedaDeSubtipo(sub);
+  };
+
+  const monedaSel = monedaDeSeleccion(tipo, subtipo);
+  const simbolo = simboloDe(monedaSel);
+
+  // A-1 (decidido 17/11/2026): si la selección cambia de MONEDA, el importe
+  // ya cargado se limpia y `canSave` exige volver a escribirlo — nunca se
+  // relee un monto en la otra moneda.
+  function aplicarSeleccion(nuevoTipo, nuevoSubtipo) {
+    const antes = monedaDeSeleccion(tipo, subtipo);
+    const despues = monedaDeSeleccion(
+      nuevoTipo,
+      nuevoSubtipo,
+    );
+
+    setTipo(nuevoTipo);
+    setSubtipo(nuevoSubtipo);
+
+    if (antes !== despues) setMonto("");
+  }
+
   const canSave =
     monto &&
     fechaISO &&
     tipo &&
     (tipo !== "banda" || subtipo) &&
+    (tipo !== "sueldo" || subtipo) &&
     (!detalleRequired || detalle.trim());
 
   async function handleSave() {
     if (!canSave) return;
 
     setLoading(true);
+
+    // 5.0: el subtipo (banda o sueldo) viaja y la moneda se RE-DERIVA acá
+    // (D-10). freelances y otros no tienen subtipo.
+    const subFinal =
+      tipo === "banda" || tipo === "sueldo"
+        ? subtipo || null
+        : null;
 
     try {
       await onSave({
@@ -79,8 +123,9 @@ export default function EditarIngresoModal({
 
         tipo,
 
-        subtipo:
-          tipo === "banda" ? subtipo : null,
+        subtipo: subFinal,
+
+        moneda: monedaDeSubtipo(subFinal),
       });
 
       onClose();
@@ -154,12 +199,12 @@ export default function EditarIngresoModal({
         <div className="flex flex-col gap-4">
           {/* MONTO */}
           <div>
-            <SectionLabel>Monto ($)</SectionLabel>
+            <SectionLabel>Monto ({simbolo})</SectionLabel>
 
             <div className="relative overflow-hidden rounded-[18px] border border-accent/30 bg-gradient-to-br from-accent/15 to-[#5b35d5]/20 px-[18px] py-4">
               <div className="flex items-center gap-1">
                 <span className="font-sora text-[22px] font-bold text-accent-light">
-                  $
+                  {simbolo}
                 </span>
 
                 <input
@@ -221,13 +266,9 @@ export default function EditarIngresoModal({
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => {
-                    setTipo(t.id);
-
-                    if (t.id !== "banda") {
-                      setSubtipo("");
-                    }
-                  }}
+                  onClick={() =>
+                    aplicarSeleccion(t.id, "")
+                  }
                   className={`rounded-[12px] border px-3 py-[10px] text-left text-[13px] transition-all ${
                     tipo === t.id
                       ? "border-accent/60 bg-accent/18 text-accent-light font-semibold"
@@ -251,7 +292,10 @@ export default function EditarIngresoModal({
                     key={b.id}
                     type="button"
                     onClick={() =>
-                      setSubtipo(b.id)
+                      aplicarSeleccion(
+                        "banda",
+                        b.id,
+                      )
                     }
                     className={`w-full rounded-[14px] border px-4 py-[13px] text-left text-[14px] transition-all ${
                       subtipo === b.id
@@ -260,6 +304,35 @@ export default function EditarIngresoModal({
                     }`}
                   >
                     {b.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* SUBTIPO DE SUELDO (5.0, D-7/D-10) — el subtipo fija la moneda */}
+          {tipo === "sueldo" && (
+            <div>
+              <SectionLabel>Concepto del sueldo</SectionLabel>
+
+              <div className="flex flex-col gap-2">
+                {SUELDOS.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() =>
+                      aplicarSeleccion(
+                        "sueldo",
+                        s.id,
+                      )
+                    }
+                    className={`w-full rounded-[14px] border px-4 py-[13px] text-left text-[14px] transition-all ${
+                      subtipo === s.id
+                        ? "border-accent/60 bg-accent/18 text-accent-light font-semibold"
+                        : "border-border bg-white/3 text-text"
+                    }`}
+                  >
+                    {s.label}
                   </button>
                 ))}
               </div>

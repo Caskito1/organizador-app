@@ -9,6 +9,7 @@ import {
 
 import { db } from "@/lib/firebase";
 import { fechaLocal } from "@/app/gastos/helpers/dateHelpers";
+import { monedaDeSubtipo } from "@/app/ingresos/helpers/ingresosMoneda";
 
 export async function submitIngreso({
   user,
@@ -33,6 +34,11 @@ export async function submitIngreso({
       tipo,
 
       subtipo: subtipo ?? null,
+
+      // 5.0: la moneda NO se elige — se deriva del subtipo (D-2/D-7) y se
+      // escribe SIEMPRE, también UYU (P-6). El fallback a UYU del modelo
+      // cubre solo los documentos anteriores a 5.0 (D-6).
+      moneda: monedaDeSubtipo(subtipo),
 
       detalle:
         detalle.trim() || null,

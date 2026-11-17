@@ -6,6 +6,10 @@ import MenuFlotante, {
   calcularPosicionMenu,
 } from "@/app/components/ui/MenuFlotante";
 import { fechaEfectiva } from "@/app/gastos/helpers/dateHelpers";
+import {
+  monedaEfectiva,
+  simboloDe,
+} from "@/app/ingresos/helpers/ingresosMoneda";
 
 export default function FilaIngreso({
   ingreso,
@@ -100,7 +104,7 @@ export default function FilaIngreso({
                   : "text-[15px] text-[var(--user-b)]"
               }`}
             >
-              +$
+              +{simboloDe(monedaEfectiva(ingreso))}
               {Number(
                 ingreso.monto,
               ).toLocaleString("es-AR")}

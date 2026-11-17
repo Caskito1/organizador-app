@@ -196,3 +196,55 @@ test('delete propio sigue permitido → allow', async () => {
 
   await assertSucceeds(deleteDoc(doc(dbAs(A), 'ingresos', 'i_delete')));
 });
+
+// ─── 5.0 — moneda (Sueldo multimoneda) ────────────────────────────────────
+// `moneda` opcional ('UYU' | 'USD') en create y update. La coherencia
+// subtipo↔moneda NO se valida acá: el único guard es el helper del cliente
+// (PROPUESTA-ETAPA-5 §5.0.3, P-1).
+
+test('create con moneda UYU y USD → allow', async () => {
+  await assertSucceeds(
+    setDoc(
+      doc(dbAs(A), 'ingresos', 'i_mon_uyu'),
+      baseIngreso({ moneda: 'UYU' })
+    )
+  );
+
+  await assertSucceeds(
+    setDoc(
+      doc(dbAs(A), 'ingresos', 'i_mon_usd'),
+      baseIngreso({ moneda: 'USD', subtipo: 'sueldo_dolares' })
+    )
+  );
+});
+
+test('create sin moneda → allow (compatibilidad con clientes viejos)', async () => {
+  await assertSucceeds(
+    setDoc(doc(dbAs(A), 'ingresos', 'i_mon_none'), baseIngreso())
+  );
+});
+
+test('create con moneda inválida → deny', async () => {
+  for (const [i, moneda] of ['ARS', 'usd', 1].entries()) {
+    await assertFails(
+      setDoc(
+        doc(dbAs(A), 'ingresos', `i_mon_bad_${i}`),
+        baseIngreso({ moneda })
+      )
+    );
+  }
+});
+
+test('update con moneda válida → allow; con moneda inválida → deny (createdAt intacto)', async () => {
+  await assertSucceeds(
+    setDoc(doc(dbAs(A), 'ingresos', 'i_mon_edit'), baseIngreso())
+  );
+
+  await assertSucceeds(
+    updateDoc(doc(dbAs(A), 'ingresos', 'i_mon_edit'), { moneda: 'USD' })
+  );
+
+  await assertFails(
+    updateDoc(doc(dbAs(A), 'ingresos', 'i_mon_edit'), { moneda: 'ARS' })
+  );
+});

@@ -36,7 +36,9 @@ export default function IngresosPage() {
     ingresosFreelance,
     ingresosOtros,
 
-    totalIngresos,
+    totalIngresosUYU,
+    totalIngresosUSD,
+    hayUSD,
 
     openSections,
     toggleSection,
@@ -66,7 +68,9 @@ export default function IngresosPage() {
         />
 
         <TotalIngresosCard
-          totalIngresos={totalIngresos}
+          totalIngresos={totalIngresosUYU}
+          totalUSD={totalIngresosUSD}
+          hayUSD={hayUSD}
           totalTransacciones={
             ingresosSueldo.length +
             ingresosBandas.length +

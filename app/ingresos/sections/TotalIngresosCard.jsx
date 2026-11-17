@@ -1,5 +1,7 @@
 export default function TotalIngresosCard({
   totalIngresos,
+  totalUSD = 0,
+  hayUSD = false,
   totalTransacciones,
 }) {
   return (
@@ -16,8 +18,26 @@ export default function TotalIngresosCard({
         )}
       </p>
 
-      <p className="mt-1 text-[12px] text-text-muted">
-        {totalTransacciones} ingresos
+      {/* 5.0 (D-9): los dólares NO se suman al total grande. Van en la misma
+          fila que el conteo, del mismo tamaño y sin negrita, separados por
+          «/», y solo si hay USD. */}
+      <p className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[12px] text-text-muted">
+        {hayUSD && (
+          <>
+            <span className="text-[var(--user-b)]">
+              US${" "}
+              {totalUSD.toLocaleString(
+                "es-AR",
+              )}
+            </span>
+
+            <span aria-hidden="true" className="text-text-muted/50">
+              /
+            </span>
+          </>
+        )}
+
+        <span>{totalTransacciones} ingresos</span>
       </p>
     </div>
   );

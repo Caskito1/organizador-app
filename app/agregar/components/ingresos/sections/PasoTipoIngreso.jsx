@@ -2,6 +2,7 @@
 
 import {
   BANDAS,
+  SUELDOS,
 } from "../hooks/useModoIngreso";
 
 export default function PasoTipoIngreso({
@@ -10,31 +11,62 @@ export default function PasoTipoIngreso({
 
   seleccionarTipo,
   seleccionarBanda,
+  seleccionarSueldo,
 }) {
   return (
     <div className="flex flex-col gap-3">
-      {/* SUELDO */}
+      {/* SUELDO — 5.0: submenú de subtipos (el subtipo fija la moneda).
+          Mismo patrón que el submenú de Bandas de abajo. */}
 
-      <button
-        onClick={() =>
-          seleccionarTipo(
-            "sueldo",
-          )
-        }
-        className={`w-full rounded-[18px] border px-5 py-5 text-left transition-all duration-200 ${
-          tipo === "sueldo"
-            ? "border-accent/60 bg-accent/15"
-            : "border-border bg-glass"
-        }`}
-      >
-        <p className="mb-1 font-sora text-[15px] font-bold text-text">
-          Sueldo
-        </p>
+      <div className="rounded-[18px] border border-border bg-glass overflow-hidden">
+        <button
+          onClick={() =>
+            seleccionarTipo(
+              "sueldo",
+            )
+          }
+          className={`w-full px-5 py-5 text-left transition-all duration-200 ${
+            tipo === "sueldo"
+              ? "bg-accent/10"
+              : ""
+          }`}
+        >
+          <p className="mb-1 font-sora text-[15px] font-bold text-text">
+            Sueldo
+          </p>
 
-        <p className="text-[13px] text-text-muted">
-          Ingreso principal mensual.
-        </p>
-      </button>
+          <p className="text-[13px] text-text-muted">
+            Ingreso principal mensual, en pesos o en dólares.
+          </p>
+        </button>
+
+        {tipo === "sueldo" && (
+          <div className="border-t border-border p-3 flex flex-col gap-2">
+            {SUELDOS.map((s) => {
+              const active =
+                subtipo === s.id;
+
+              return (
+                <button
+                  key={s.id}
+                  onClick={() =>
+                    seleccionarSueldo(
+                      s.id,
+                    )
+                  }
+                  className={`w-full rounded-[14px] border px-4 py-[13px] text-left text-[14px] transition-all duration-150 ${
+                    active
+                      ? "border-accent/60 bg-accent/18 text-accent-light"
+                      : "border-border bg-white/3 text-text"
+                  }`}
+                >
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* BANDAS */}
 

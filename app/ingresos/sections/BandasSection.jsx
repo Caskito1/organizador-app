@@ -6,6 +6,12 @@ import FilaIngreso from "../components/FilaIngreso";
 // useModoIngreso y no se cambian. Duplicado por decision de alcance
 // de 2.3: no se extrae a una taxonomia compartida.
 import { BANDAS } from "@/app/agregar/components/ingresos/hooks/useModoIngreso";
+import {
+  UYU,
+  monedaDeSubtipo,
+  simboloDe,
+  sumarPorMoneda,
+} from "../helpers/ingresosMoneda";
 
 const BANDA_LABEL = BANDAS.reduce(
   (acc, b) => {
@@ -42,12 +48,9 @@ export default function BandasSection({
     {},
   );
 
-  const totalGeneral =
-    ingresos.reduce(
-      (a, i) =>
-        a + Number(i.monto || 0),
-      0,
-    );
+  // 5.0: los totales suman SOLO pesos (los ítems de esta sección se derivan a
+  // UYU por subtipo). El símbolo sale de la moneda del grupo, no del tipo.
+  const totalGeneral = sumarPorMoneda(ingresos, UYU);
 
   return (
     <Acordeon
@@ -60,14 +63,14 @@ export default function BandasSection({
       <div className="flex flex-col gap-3">
         {Object.entries(bandas).map(
           ([banda, items]) => {
+            const monedaBanda =
+              monedaDeSubtipo(banda);
+            const simbolo =
+              simboloDe(monedaBanda);
             const totalBanda =
-              items.reduce(
-                (a, i) =>
-                  a +
-                  Number(
-                    i.monto || 0,
-                  ),
-                0,
+              sumarPorMoneda(
+                items,
+                monedaBanda,
               );
 
             return (
@@ -83,7 +86,7 @@ export default function BandasSection({
                   </p>
 
                   <p className="font-sora text-[14px] font-bold text-accent-light">
-                    $
+                    {simbolo}
                     {totalBanda.toLocaleString(
                       "es-AR",
                     )}

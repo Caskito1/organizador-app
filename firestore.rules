@@ -17,9 +17,11 @@ service cloud.firestore {
     // ─── Enmienda 4.5-fecha (03/11/2026, desplegada en el cierre de la 4.5) ─
     // Solo `gastos`: `fecha` opcional (tipo + rango) y `createdAt`
     // inmutable. El resto del bloque sigue siendo la copia de consola.
-    // ─── 5.0-fecha (17/11/2026, PENDIENTE DE DEPLOY) ────────────────────
+    // ─── 5.0-fecha (17/11/2026, desplegada en el cierre de la 5.0-fecha) ──
     // Solo `reintegros` (BLOQUE B): `fecha` opcional en el alta, rama (g) de
     // update de un solo campo y `entidad: 'fecha'` en la bitácora.
+    // ─── 5.0 Sueldo multimoneda (17/11/2026, PENDIENTE DE DEPLOY) ────────
+    // Solo `ingresos`: `moneda` opcional ('UYU' | 'USD') en create y update.
     // ═══════════════════════════════════════════════════════════════════
 
     // ─────────────────────────────
@@ -141,6 +143,14 @@ service cloud.firestore {
           !('fecha' in request.resource.data)
           || fechaValida(request.resource.data.fecha)
         )
+        // 5.0: moneda del ingreso (OPCIONAL por compatibilidad con clientes
+        // viejos; la app la escribe siempre). Sin coherencia subtipo↔moneda:
+        // el único guard de esa coherencia es el helper del cliente
+        // (PROPUESTA-ETAPA-5 §5.0.3, P-1).
+        && (
+          !('moneda' in request.resource.data)
+          || request.resource.data.moneda in ['UYU', 'USD']
+        )
         // 4.5-fecha: `createdAt` es auditoría y debe ser el reloj del server.
         && request.resource.data.createdAt == request.time;
 
@@ -161,6 +171,11 @@ service cloud.firestore {
         && (
           !('fecha' in request.resource.data)
           || fechaValida(request.resource.data.fecha)
+        )
+        // 5.0: si el documento lleva `moneda`, debe ser un valor canónico.
+        && (
+          !('moneda' in request.resource.data)
+          || request.resource.data.moneda in ['UYU', 'USD']
         );
     }
 

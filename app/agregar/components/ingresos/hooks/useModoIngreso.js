@@ -5,6 +5,9 @@
 import { useState } from "react";
 
 import { hoyISO } from "@/app/gastos/helpers/dateHelpers";
+import { SUELDOS } from "@/app/ingresos/helpers/ingresosMoneda";
+
+export { SUELDOS };
 
 export const BANDAS = [
   {
@@ -51,13 +54,25 @@ export function useModoIngreso() {
 
     setSubtipo(null);
 
-    if (id !== "banda") {
+    // 5.0: Sueldo espera su subtipo (igual que Bandas), porque el subtipo es
+    // lo que fija la moneda. El resto de los tipos avanza directo.
+    if (id !== "banda" && id !== "sueldo") {
       setPaso("detalle");
     }
   }
 
   function seleccionarBanda(id) {
     setTipo("banda");
+
+    setSubtipo(id);
+
+    setPaso("detalle");
+  }
+
+  // 5.0 (D-7): espejo de seleccionarBanda. Elegir el subtipo fija la moneda
+  // por derivación (monedaDeSubtipo) — no hay selector de moneda.
+  function seleccionarSueldo(id) {
+    setTipo("sueldo");
 
     setSubtipo(id);
 
@@ -75,7 +90,11 @@ const tipoLabel = {
   const subtipoLabel =
     BANDAS.find(
       (b) => b.id === subtipo,
-    )?.label ?? null;
+    )?.label ??
+    SUELDOS.find(
+      (s) => s.id === subtipo,
+    )?.label ??
+    null;
 
   return {
     PASOS_I,
@@ -103,5 +122,6 @@ const tipoLabel = {
 
     seleccionarTipo,
     seleccionarBanda,
+    seleccionarSueldo,
   };
 }

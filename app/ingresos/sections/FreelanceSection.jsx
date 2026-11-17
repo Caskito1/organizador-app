@@ -2,6 +2,8 @@ import Acordeon from "@/app/gastos/components/Acordeon";
 
 import FilaIngreso from "../components/FilaIngreso";
 
+import { UYU, sumarPorMoneda } from "../helpers/ingresosMoneda";
+
 export default function FreelanceSection({
   ingresos,
   open,
@@ -12,11 +14,8 @@ export default function FreelanceSection({
   return (
     <Acordeon
       titulo="Freelance"
-      total={ingresos.reduce(
-        (a, i) =>
-          a + Number(i.monto || 0),
-        0,
-      )}
+      // 5.0: solo pesos (los ítems de esta sección se derivan a UYU).
+      total={sumarPorMoneda(ingresos, UYU)}
       open={open}
       onToggle={onToggle}
     >

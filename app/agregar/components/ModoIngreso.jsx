@@ -127,6 +127,9 @@ const canSubmit =
           seleccionarBanda={
             modo.seleccionarBanda
           }
+          seleccionarSueldo={
+            modo.seleccionarSueldo
+          }
         />
       )}
 
