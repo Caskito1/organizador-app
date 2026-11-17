@@ -20,7 +20,7 @@ service cloud.firestore {
     // ─── 5.0-fecha (17/11/2026, desplegada en el cierre de la 5.0-fecha) ──
     // Solo `reintegros` (BLOQUE B): `fecha` opcional en el alta, rama (g) de
     // update de un solo campo y `entidad: 'fecha'` en la bitácora.
-    // ─── 5.0 Sueldo multimoneda (17/11/2026, PENDIENTE DE DEPLOY) ────────
+    // ─── 5.0 Sueldo multimoneda (17/11/2026, desplegada en el cierre de la 5.0) ───
     // Solo `ingresos`: `moneda` opcional ('UYU' | 'USD') en create y update.
     // ═══════════════════════════════════════════════════════════════════
 
