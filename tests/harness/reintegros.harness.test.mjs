@@ -1,7 +1,8 @@
 // tests/harness/reintegros.harness.test.mjs
 // Harness del módulo Reintegros (4.1) contra el emulador demo-finanzas.
 // Prueba los helpers REALES (submitReintegro/submitDevolucion y la
-// edición de monto de 4.3b: editarEntrega/editarObligacion) y la
+// edición de monto de 4.3b: editarEntrega/editarObligacion; la edición de
+// FECHA de 5.0-fecha: editarFechaObligacion) y la
 // suscripción (subscribeReintegros) + funciones puras del modelo.
 //
 // Ningún archivo importado por este harness carga la config real de
@@ -95,6 +96,18 @@
 // (documentada, NO asentada como assert): un participante puede crear un
 // evento sin acción porque las reglas no pueden verificarlo dentro de una
 // transacción; no altera saldos ni montos, solo el historial.
+//   +  (H48)  alta con `fecha` (medianoche local) y evento creacion intacto
+//   +  (H49)  fecha efectiva: fecha de octubre cargada en noviembre cuenta en
+//             octubre (movimiento propio + espejo), noviembre en 0
+//   +  (H50)  fallback F-3: sin `fecha` cuenta por createdAt; convivencia
+//   +  (H51)  editarFechaObligacion: mueve de mes, evento edicion/fecha,
+//             createdAt intacto, mismo día ⇒ FECHA_SIN_CAMBIOS sin evento
+//   +  (H52)  guardas: NO_REGISTRADOR, FECHA_BLOQUEADA, CONDONADA,
+//             ELIMINADA, NO_ENCONTRADA y FECHA_INVALIDA, sin escritura
+//   +  (H53)  F-2: la entrega inicial hereda la fecha; D-7 consistente
+//   +  (H54)  esquema canónico edicion/fecha (+ fechaAnterior null legacy)
+//   +  (H55)  editar la fecha re-emite la suscripción
+// H48–H55: fecha del reintegro (5.0-fecha, 17/11/2026).
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -131,6 +144,7 @@ import {
 } from "../../app/agregar/components/reintegros/helpers/submitDevolucion.js";
 import { editarEntrega } from "../../app/agregar/components/reintegros/helpers/editarEntrega.js";
 import { editarObligacion } from "../../app/agregar/components/reintegros/helpers/editarObligacion.js";
+import { editarFechaObligacion } from "../../app/agregar/components/reintegros/helpers/editarFechaObligacion.js";
 import { eliminarEntrega } from "../../app/agregar/components/reintegros/helpers/eliminarEntrega.js";
 import { eliminarObligacion } from "../../app/agregar/components/reintegros/helpers/eliminarObligacion.js";
 import { condonar } from "../../app/agregar/components/reintegros/helpers/condonar.js";
@@ -143,7 +157,9 @@ import {
   entradasDelMes,
   salidasDelMes,
   tipoDineroDe,
+  fechaEfectivaDe,
 } from "../../app/reintegros/helpers/modelo.js";
+import { isoDeFecha } from "../../app/gastos/helpers/dateHelpers.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rulesSrc = fs.readFileSync(
@@ -160,6 +176,7 @@ const SUB2 = "uid_sub_2";
 const SUB3 = "uid_sub_3";
 const SUB4 = "uid_sub_4";
 const SUB5 = "uid_sub_5";
+const SUB6 = "uid_sub_6";
 
 let testEnv;
 
@@ -2703,6 +2720,16 @@ const CANON_EVENTO = {
     "montoNuevo",
     "createdAt",
   ),
+  // 5.0-fecha (17/11/2026): celda nueva. `entidad: 'fecha'` es una entidad,
+  // no un tipo: la edición de fecha es una acción propia (U-2).
+  "edicion/fecha": canon(
+    "registradoPor",
+    "tipo",
+    "entidad",
+    "fechaAnterior",
+    "fechaNueva",
+    "createdAt",
+  ),
   "edicion/entrega": canon(
     "registradoPor",
     "tipo",
@@ -3031,4 +3058,316 @@ test("H47 — bitácora create-only (caso 15): update/delete rechazados; no part
     }),
   );
   assert.equal((await readEventos(rid, A)).length, 1, "sin evento forjado");
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 5.0-fecha (17/11/2026) — fecha del reintegro
+// Alta con `fecha`, atribución por FECHA EFECTIVA (fallback a `createdAt`),
+// edición de fecha como operación propia y su celda canónica `edicion/fecha`.
+// ═══════════════════════════════════════════════════════════════════════
+
+const OCT_2026 = { start: new Date(2026, 9, 1), nextStart: new Date(2026, 10, 1) };
+const NOV_2026 = { start: new Date(2026, 10, 1), nextStart: new Date(2026, 11, 1) };
+
+function flujosDe(obligaciones, entregas, uid, mes) {
+  return {
+    entradas: entradasDelMes({ obligaciones, entregas, uid, ...mes }),
+    salidas: salidasDelMes({ obligaciones, entregas, uid, ...mes }),
+  };
+}
+
+test("H48 — submitReintegro con fechaISO: guarda `fecha` a medianoche LOCAL y el evento creacion queda intacto", async () => {
+  const dbA = dbAs(A);
+  const { rid } = await submitReintegro({
+    db: dbA,
+    uid: A,
+    uidNombre: "Alice",
+    sentido: "por_cobrar",
+    monto: 1500,
+    contraparteUid: null,
+    contraparteNombre: "Proveedor",
+    groupId: null,
+    concepto: "Préstamo 31/10",
+    detalle: null,
+    movimientoInicial: "salida",
+    fechaISO: "2026-10-31",
+  });
+
+  const obl = await readObl(rid, A);
+  assert.ok(obl.fecha instanceof Timestamp, "fecha es Timestamp");
+  // Medianoche LOCAL del día elegido: ni corre el día ni el mes.
+  assert.equal(isoDeFecha(obl.fecha), "2026-10-31");
+  assert.equal(obl.fecha.toDate().getDate(), 31);
+  assert.equal(obl.fecha.toDate().getMonth(), 9, "octubre, no noviembre");
+  assert.ok(obl.createdAt instanceof Timestamp, "createdAt de servidor (F-4)");
+
+  const evs = await readEventos(rid, A);
+  assert.equal(evs.length, 1);
+  assert.ok(!("fecha" in evs[0]), "creacion/obligacion NO lleva fecha (Capa 2)");
+  assertEsquema(evs[0], "creacion", "obligacion");
+});
+
+test("H49 — fecha efectiva: obligación con fecha de octubre cargada en noviembre cuenta en OCTUBRE (propio y espejo)", () => {
+  const obl = {
+    id: "h49_mes",
+    registradoPor: A,
+    participantes: [A, B],
+    sentido: "por_cobrar",
+    monto: 1500,
+    devuelto: 0,
+    movimientoInicial: "salida",
+    fecha: Timestamp.fromDate(new Date(2026, 9, 31)),
+    createdAt: Timestamp.fromDate(new Date(2026, 10, 3)), // cargada el 03/11
+  };
+
+  assert.equal(fechaEfectivaDe(obl).getDate(), 31);
+  const aOct = flujosDe([obl], [], A, OCT_2026);
+  const aNov = flujosDe([obl], [], A, NOV_2026);
+  assert.equal(aOct.salidas, 1500, "A: salida en octubre (fecha, no createdAt)");
+  assert.equal(aNov.salidas, 0, "A: nada en noviembre");
+  // Espejo para la contraparte miembro: entrada en el MISMO mes (F-2).
+  const bOct = flujosDe([obl], [], B, OCT_2026);
+  const bNov = flujosDe([obl], [], B, NOV_2026);
+  assert.equal(bOct.entradas, 1500, "B: espejo de entrada en octubre");
+  assert.equal(bNov.entradas, 0, "B: nada en noviembre");
+});
+
+test("H50 — F-3 fallback: sin `fecha` la obligación sigue contando por createdAt", () => {
+  const legacy = {
+    id: "h50_legacy",
+    registradoPor: A,
+    participantes: [A, B],
+    sentido: "por_cobrar",
+    monto: 1500,
+    devuelto: 0,
+    movimientoInicial: "salida",
+    createdAt: Timestamp.fromDate(new Date(2026, 10, 3)), // 03/11
+  };
+
+  assert.equal(fechaEfectivaDe(legacy).getDate(), 3);
+  assert.equal(flujosDe([legacy], [], A, OCT_2026).salidas, 0, "nada en octubre");
+  assert.equal(flujosDe([legacy], [], A, NOV_2026).salidas, 1500, "por createdAt");
+
+  // Convivencia: legacy + nuevo en el mismo mes de noviembre.
+  const nuevo = {
+    ...legacy,
+    id: "h50_nuevo",
+    fecha: Timestamp.fromDate(new Date(2026, 10, 20)),
+  };
+  assert.equal(
+    flujosDe([legacy, nuevo], [], A, NOV_2026).salidas,
+    3000,
+    "ambos en noviembre (uno por fecha, otro por createdAt)",
+  );
+});
+
+test("H51 — editarFechaObligacion: mueve la obligación de mes, deja edicion/fecha y createdAt intacto", async () => {
+  const rid = "h51_fecha";
+  await seedObl(
+    rid,
+    baseObl({
+      sentido: "por_cobrar",
+      monto: 1500,
+      devuelto: 0,
+      movimientoInicial: "salida",
+      fecha: Timestamp.fromDate(new Date(2026, 9, 31)), // 31/10
+      createdAt: Timestamp.fromDate(new Date(2026, 10, 3)), // cargada 03/11
+    }),
+  );
+
+  let obl = await readObl(rid, A);
+  assert.equal(flujosDe([obl], [], A, OCT_2026).salidas, 1500);
+  assert.equal(flujosDe([obl], [], A, NOV_2026).salidas, 0);
+
+  await editarFechaObligacion({
+    db: dbAs(A),
+    uid: A,
+    rid,
+    fechaISO: "2026-11-05",
+  });
+
+  obl = await readObl(rid, A);
+  assert.equal(isoDeFecha(obl.fecha), "2026-11-05", "fecha nueva");
+  assert.equal(isoDeFecha(obl.createdAt), "2026-11-03", "createdAt inmutable (F-4)");
+  assert.equal(obl.devuelto, 0, "devuelto intacto");
+  assert.equal(flujosDe([obl], [], A, OCT_2026).salidas, 0, "sale de octubre");
+  assert.equal(flujosDe([obl], [], A, NOV_2026).salidas, 1500, "entra en noviembre");
+
+  const evs = await readEdicionEventos(rid, B);
+  assert.equal(evs.length, 1);
+  assert.equal(evs[0].entidad, "fecha");
+  assert.equal(isoDeFecha(evs[0].fechaAnterior), "2026-10-31");
+  assert.equal(isoDeFecha(evs[0].fechaNueva), "2026-11-05");
+  assert.equal(evs[0].registradoPor, A);
+  assert.ok(evs[0].createdAt instanceof Timestamp, "createdAt de servidor");
+
+  // P-4: el mismo DÍA no es un cambio → error y sin evento nuevo.
+  await assert.rejects(
+    () =>
+      editarFechaObligacion({ db: dbAs(A), uid: A, rid, fechaISO: "2026-11-05" }),
+    (err) => {
+      assert.ok(err instanceof ReintegroError);
+      assert.equal(err.code, "FECHA_SIN_CAMBIOS");
+      return true;
+    },
+  );
+  assert.equal((await readEdicionEventos(rid, B)).length, 1, "sin evento nuevo");
+  assert.equal(isoDeFecha((await readObl(rid, A)).fecha), "2026-11-05", "intacta");
+});
+
+test("H52 — editarFechaObligacion: guardas (registrador, devuelto, condonada, eliminada, inexistente, formato) sin escritura", async () => {
+  const abierta = "h52_open";
+  const bloqueada = "h52_block";
+  const condonada = "h52_cond";
+  const eliminada = "h52_elim";
+  await seedObl(abierta, baseObl({ devuelto: 0, monto: 1000 }));
+  await seedObl(bloqueada, baseObl({ devuelto: 200, monto: 1000 }));
+  await seedObl(
+    condonada,
+    baseObl({ devuelto: 0, condonacion: { condonadaPor: A } }),
+  );
+  await seedObl(eliminada, baseObl({ devuelto: 0, eliminacion: { eliminadaPor: A } }));
+
+  async function rechaza(rid, uid, fechaISO, code) {
+    await assert.rejects(
+      () => editarFechaObligacion({ db: dbAs(uid), uid, rid, fechaISO }),
+      (err) => {
+        if (code === "NO_ENCONTRADA") {
+          // Espejo de H12: con reglas, la LECTURA del doc inexistente se
+          // deniega primero (`get` con resource null → permission-denied, sin
+          // leak de existencia). NO_ENCONTRADA es defense-in-depth.
+          const ok =
+            (err instanceof ReintegroError && err.code === "NO_ENCONTRADA") ||
+            err?.code === "permission-denied";
+          assert.ok(
+            ok,
+            `esperado NO_ENCONTRADA o permission-denied; recibido ${err?.code}`,
+          );
+          return true;
+        }
+        assert.ok(err instanceof ReintegroError);
+        assert.equal(err.code, code);
+        return true;
+      },
+    );
+  }
+
+  await rechaza(abierta, B, "2026-10-31", "NO_REGISTRADOR");
+  await rechaza(bloqueada, A, "2026-10-31", "FECHA_BLOQUEADA");
+  await rechaza(condonada, A, "2026-10-31", "CONDONADA");
+  await rechaza(eliminada, A, "2026-10-31", "ELIMINADA");
+  await rechaza("h52_inexistente", A, "2026-10-31", "NO_ENCONTRADA");
+  await rechaza(abierta, A, "31/10/2026", "FECHA_INVALIDA");
+  await rechaza(abierta, A, "2026-02-31", "FECHA_INVALIDA");
+
+  // Nada se escribió ni se registró en la bitácora.
+  assert.ok(!("fecha" in (await readObl(abierta, A))), "sin fecha nueva");
+  assert.equal((await readEventos(abierta, A)).length, 0, "sin eventos");
+  assert.equal((await readEventos(bloqueada, A)).length, 0);
+});
+
+test("H53 — F-2: la entrega inicial hereda la fecha; D-7 sigue consistente y la devolución va a su mes", async () => {
+  const { rid } = await submitReintegro({
+    db: dbAs(A),
+    uid: A,
+    uidNombre: "Alice",
+    sentido: "por_cobrar",
+    monto: 1500,
+    contraparteUid: B,
+    contraparteNombre: "Bob",
+    groupId: null,
+    concepto: "Préstamo 31/10",
+    detalle: null,
+    movimientoInicial: "salida",
+    fechaISO: "2026-10-31",
+  });
+
+  let obl = await readObl(rid, A);
+  let entregas = await readEntregas(rid, A);
+  // Movimiento inicial: la salida de caja cae en octubre, no en noviembre.
+  assert.equal(flujosDe([obl], entregas, A, OCT_2026).salidas, 1500);
+  assert.equal(flujosDe([obl], entregas, A, NOV_2026).salidas, 0);
+  assert.equal(flujosDe([obl], entregas, B, OCT_2026).entradas, 1500, "espejo oct.");
+
+  // Pago del deudor en noviembre: mueve `devuelto`, no la fecha.
+  await submitDevolucion({
+    db: dbAs(B),
+    uid: B,
+    uidNombre: "Bob",
+    rid,
+    monto: 500,
+    realizadoPorUid: B,
+    realizadoPorNombre: "Bob",
+    fechaPago: Timestamp.fromDate(new Date(2026, 10, 10)),
+    detalle: null,
+  });
+
+  obl = await readObl(rid, A);
+  entregas = await readEntregas(rid, A);
+  assert.equal(obl.devuelto, 500);
+  assert.ok(assertDevueltoConsistente(obl, entregas), "D-7 consistente");
+  assert.equal(flujosDe([obl], entregas, A, NOV_2026).entradas, 500, "pago en nov.");
+  assert.equal(
+    flujosDe([obl], entregas, A, OCT_2026).salidas,
+    1500,
+    "octubre sigue con el movimiento inicial",
+  );
+});
+
+test("H54 — esquema canónico edicion/fecha: fechaAnterior null en doc legacy; una acción ⇒ un evento", async () => {
+  const rid = "h54_canon";
+  await seedObl(rid, baseObl({ devuelto: 0 })); // legacy: SIN `fecha`
+  await editarFechaObligacion({
+    db: dbAs(A),
+    uid: A,
+    rid,
+    fechaISO: "2026-10-31",
+  });
+
+  const evs = await readEdicionEventos(rid, A);
+  assert.equal(evs.length, 1, "una acción ⇒ un evento");
+  assertEsquema(evs[0], "edicion", "fecha");
+  assert.equal(evs[0].fechaAnterior, null, "no había fecha (Capa 3)");
+  assert.equal(isoDeFecha(evs[0].fechaNueva), "2026-10-31");
+  // El evento de edición no altera el resultado de la edición de monto: la
+  // celda `edicion/obligacion` sigue siendo la única con montoAnterior.
+  assert.ok(!("montoAnterior" in evs[0]), "sin campos de la celda de monto");
+});
+
+test("H55 — editar la fecha re-emite la suscripción: la UI ve la fecha nueva", async () => {
+  const rid = "hs6_rid";
+  await seedObl(
+    rid,
+    baseObl({
+      registradoPor: SUB6,
+      contraparteUid: null,
+      participantes: [SUB6],
+      monto: 200,
+      devuelto: 0,
+      fecha: Timestamp.fromDate(new Date(2026, 9, 31)),
+    }),
+  );
+  const collector = createCollector(dbAs(SUB6), SUB6);
+  const inicial = await collector.waitFor((d) => d.obligaciones.length === 1);
+  assert.equal(isoDeFecha(inicial.obligaciones[0].fecha), "2026-10-31");
+
+  await editarFechaObligacion({
+    db: dbAs(SUB6),
+    uid: SUB6,
+    rid,
+    fechaISO: "2026-11-05",
+  });
+
+  const tras = await collector.waitFor(
+    (d) =>
+      d.obligaciones[0]?.fecha &&
+      isoDeFecha(d.obligaciones[0].fecha) === "2026-11-05",
+  );
+  assert.equal(isoDeFecha(tras.obligaciones[0].fecha), "2026-11-05");
+  assert.ok(Array.isArray(tras.devoluciones), "D1 sin reiniciarse");
+  assert.equal(tras.devoluciones.length, 0);
+
+  collector.unsub();
+  await sleep(100);
+  assert.equal(collector.error, null, "sin errores de suscripción");
 });

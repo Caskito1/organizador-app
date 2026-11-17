@@ -24,11 +24,16 @@
 // Editar monto → Eliminar (ambas partes). Sin acciones → sin ícono. Sello
 // de estado «Condonada» → «Perdonada» (etiqueta de UI; el modelo sigue en
 // `condonacion`).
+// 5.0-fecha (17/11/2026): la fecha visible de la fila sale de la FECHA
+// EFECTIVA (`fecha` con fallback a `createdAt`), igual que los cálculos; el
+// menú de la obligación pasa a CUATRO acciones (Editar monto · Editar fecha ·
+// Perdonar deuda · Eliminar) y la edición de fecha agrega su chip propio
+// («Fecha editada»), independiente del chip de monto.
 
 "use client";
 
 import { useAuth } from "@/lib/AuthContext";
-import { estadoDe, saldoDe, tipoDineroDe } from "../helpers/modelo";
+import { estadoDe, saldoDe, tipoDineroDe, fechaEfectivaDe } from "../helpers/modelo";
 
 const ETIQUETA_ESTADO = {
   pendiente: "Pendiente",
@@ -56,6 +61,19 @@ function ChipEdicion({ ev }) {
   return (
     <span className="mt-[4px] inline-block rounded-[8px] border border-accent/30 bg-accent/12 px-2 py-[2px] text-[10px] font-medium text-accent-light">
       Editado: {money(ev.montoAnterior)} → {money(ev.montoNuevo)} ·{" "}
+      {fechaDiaMes(ev.createdAt)}
+    </span>
+  );
+}
+
+// 5.0-fecha (P-2, opción 1) — chip de la edición de FECHA: la fecha nueva y
+// cuándo se editó. `fechaAnterior` puede ser null (doc sin `fecha`): no se
+// muestra, no se inventa.
+function ChipFechaEdicion({ ev }) {
+  if (!ev) return null;
+  return (
+    <span className="mt-[4px] inline-block rounded-[8px] border border-accent/30 bg-accent/12 px-2 py-[2px] text-[10px] font-medium text-accent-light">
+      Fecha editada: {fechaDiaMes(ev.fechaNueva)} ·{" "}
       {fechaDiaMes(ev.createdAt)}
     </span>
   );
@@ -104,6 +122,7 @@ export default function FilaReintegro({
   onPagar,
   ediciones,
   onEditarObligacion,
+  onEditarFecha,
   onEditarEntrega,
   onAccionObligacion,
   onAccionEntrega,
@@ -117,8 +136,7 @@ export default function FilaReintegro({
   const saldo = saldoDe(r);
   const devuelto = Number(r.devuelto || 0);
   const monto = Number(r.monto || 0);
-  const fecha = (r.createdAt?.toDate?.() ?? new Date(r.createdAt))
-    .toLocaleDateString("es-AR");
+  const fecha = fechaEfectivaDe(r)?.toLocaleDateString("es-AR") ?? "";
 
   const pagos = [...(entregas ?? [])].sort(
     (a, b) =>
@@ -131,6 +149,7 @@ export default function FilaReintegro({
   // Edición (4.3b): callbacks solo en Activos; chips de edición igual.
   const conEdicionPago = conAcciones && !!onEditarEntrega;
   const evObl = ediciones?.obligacion ?? null;
+  const evFecha = ediciones?.fecha ?? null;
 
   // 4.3-bis — permisos de la fila (mismas reglas que los helpers).
   const esRegistrador = r.registradoPor === uid;
@@ -150,6 +169,14 @@ export default function FilaReintegro({
           id: "editar",
           label: "Editar monto",
           onSelect: () => onEditarObligacion(r),
+        });
+      }
+      // 5.0-fecha (U-2): operación INDEPENDIENTE del monto.
+      if (esRegistrador && onEditarFecha) {
+        accionesObl.push({
+          id: "editar-fecha",
+          label: "Editar fecha",
+          onSelect: () => onEditarFecha(r),
         });
       }
       if (esAcreedor) {
@@ -207,6 +234,7 @@ export default function FilaReintegro({
             Saldado {money(devuelto)} · Pendiente {money(saldo)}
           </p>
           <ChipEdicion ev={evObl} />
+          <ChipFechaEdicion ev={evFecha} />
           <ChipTipoDinero r={r} />
         </div>
 

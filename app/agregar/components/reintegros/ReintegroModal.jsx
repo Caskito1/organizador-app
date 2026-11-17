@@ -17,6 +17,7 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthContext";
 
 import { MODAL_SHEET_CLASSES } from "@/app/components/ui/modalSheet";
+import { hoyISO } from "@/app/gastos/helpers/dateHelpers";
 
 import { useReintegroModal } from "./hooks/useReintegroModal";
 import { submitReintegro } from "./helpers/submitReintegro";
@@ -28,6 +29,9 @@ function mensajeDeError(e) {
   if (e instanceof ReintegroError) {
     if (e.code === "MONTO_INVALIDO") {
       return "El monto debe ser un número entero en pesos, mayor a $0.";
+    }
+    if (e.code === "FECHA_INVALIDA") {
+      return "Elegí una fecha válida (no puede ser futura).";
     }
     if (e.code === "VALIDACION") {
       return e.message || "Revisá los datos ingresados.";
@@ -71,8 +75,6 @@ export default function ReintegroModal({ onClose }) {
   // lo avisa y pide confirmación antes de cerrar.
   const enVueloRef = useRef(false);
 
-  const hoy = new Date().toLocaleDateString("es-AR");
-
   async function handleGuardar() {
     if (!m.canSubmit || loading) return;
 
@@ -94,6 +96,7 @@ export default function ReintegroModal({ onClose }) {
       detalle: m.detalle,
       movimientoInicial: m.movimientoInicial,
       movimientoInicialTipo: m.movimientoInicialTipo,
+      fechaISO: m.fecha,
       rid: m.rid,
     };
 
@@ -373,12 +376,28 @@ export default function ReintegroModal({ onClose }) {
           />
         </div>
 
-        {/* FECHA — no editable en alta (§9.3) */}
-        <div className="mb-4 rounded-[14px] border border-border bg-white/3 px-4 py-3">
-          <p className="text-[11px] uppercase tracking-[0.4px] text-text-muted">
-            Fecha
-          </p>
-          <p className="text-[14px] text-text">{hoy} (se registra al guardar)</p>
+        {/* FECHA DEL MOVIMIENTO — 5.0-fecha (U-1): editable, default hoy.
+            Reemplaza el bloque estático «no editable en alta» (§9.3): la fecha
+            ya no es `createdAt`, y el período se deriva de ella. */}
+        <div className="mb-4 flex flex-col gap-[6px]">
+          <label className="text-[12px] font-medium tracking-[0.3px] text-text-muted">
+            FECHA DEL MOVIMIENTO
+          </label>
+          <input
+            type="date"
+            value={m.fecha}
+            min="2020-01-01"
+            max={hoyISO()}
+            onChange={(e) => m.setFecha(e.target.value)}
+            disabled={bloqueado}
+            className="rounded-[14px] border border-border bg-white/3 px-4 py-3 text-[14px] text-text"
+          />
+          {m.fecha && m.fecha !== hoyISO() && (
+            <p className="text-[11px] leading-[1.5] text-text-muted">
+              Si la fecha es de otro mes, el reintegro (y su movimiento inicial)
+              se cuenta en ese mes.
+            </p>
+          )}
         </div>
 
         {/* DINERO A LA CONTRAPARTE — solo por_cobrar (4.3c); DESMARCADO por

@@ -1011,3 +1011,158 @@ test('3.44 — edit monto de entrega a no entero (0.5) vía rama (ii): rechazado
   bInt.update(doc(db, 'reintegros', 'r344'), { devuelto: 150 });
   await assertSucceeds(bInt.commit());
 });
+
+// ── 5.0-fecha (17/11/2026) ──────────────────────────────────────────────
+// `fecha` opcional en el alta (compatibilidad), rama (g) de update de un solo
+// campo (registrador + devuelto == 0 + activa no condonada) y `entidad:
+// 'fecha'` en la bitácora. Los documentos legacy (sin `fecha`) se cubren en
+// 3.48b.
+
+const OCT_31 = () => Timestamp.fromDate(new Date(2026, 9, 31)); // medianoche local
+const SEP_30 = () => Timestamp.fromDate(new Date(2026, 8, 30));
+
+test('3.45 — 5.0-fecha: alta CON fecha válida (miembro y externa) acepta; fecha no-timestamp rechaza', async () => {
+  await assertSucceeds(
+    setDoc(
+      doc(dbAs(A), 'reintegros', 'r345a'),
+      createMemberObl({ fecha: OCT_31() })
+    )
+  );
+  await assertSucceeds(
+    setDoc(
+      doc(dbAs(A), 'reintegros', 'r345b'),
+      externalObl({ fecha: OCT_31() })
+    )
+  );
+  await assertFails(
+    setDoc(
+      doc(dbAs(A), 'reintegros', 'r345c'),
+      createMemberObl({ fecha: '2026-10-31' })
+    )
+  );
+});
+
+test('3.46 — 5.0-fecha: alta SIN fecha sigue aceptada (compatibilidad con clientes viejos)', async () => {
+  await assertSucceeds(
+    setDoc(doc(dbAs(A), 'reintegros', 'r346'), createMemberObl())
+  );
+});
+
+test('3.47 — 5.0-fecha: alta con fecha fuera de rango (2019 y futuro +3 días) rechazada', async () => {
+  await assertFails(
+    setDoc(
+      doc(dbAs(A), 'reintegros', 'r347a'),
+      createMemberObl({ fecha: Timestamp.fromDate(new Date(2019, 11, 31)) })
+    )
+  );
+  const futuro = Timestamp.fromDate(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000));
+  await assertFails(
+    setDoc(
+      doc(dbAs(A), 'reintegros', 'r347b'),
+      createMemberObl({ fecha: futuro })
+    )
+  );
+});
+
+test('3.48 — 5.0-fecha: edición de fecha por el registrador (con fecha previa y en doc legacy sin fecha) aceptada', async () => {
+  await seed('r348a', createMemberObl({ devuelto: 0, fecha: OCT_31() }));
+  await assertSucceeds(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r348a'), { fecha: SEP_30() })
+  );
+  // legacy: el documento no tiene `fecha` (fallback a createdAt hasta ahora)
+  await seed('r348b', createMemberObl({ devuelto: 0 }));
+  await assertSucceeds(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r348b'), { fecha: OCT_31() })
+  );
+});
+
+test('3.49 — 5.0-fecha: la contraparte miembro y un tercero no editan la fecha', async () => {
+  await seed('r349', createMemberObl({ devuelto: 0 }));
+  await assertFails(
+    updateDoc(doc(dbAs(B), 'reintegros', 'r349'), { fecha: OCT_31() })
+  );
+  await assertFails(
+    updateDoc(doc(dbAs(C), 'reintegros', 'r349'), { fecha: OCT_31() })
+  );
+});
+
+test('3.50 — 5.0-fecha: fecha bloqueada con devuelto > 0, sobre condonada y sobre eliminada', async () => {
+  await seed('r350a', createMemberObl({ devuelto: 100 }));
+  await assertFails(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r350a'), { fecha: OCT_31() })
+  );
+  await seed(
+    'r350b',
+    createMemberObl({ devuelto: 0, condonacion: { condonadaPor: A } })
+  );
+  await assertFails(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r350b'), { fecha: OCT_31() })
+  );
+  await seed(
+    'r350c',
+    createMemberObl({ devuelto: 0, eliminacion: { eliminadaPor: A } })
+  );
+  await assertFails(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r350c'), { fecha: OCT_31() })
+  );
+});
+
+test('3.51 — 5.0-fecha: fecha junto con devuelto, monto o createdAt en el mismo write: rechazado', async () => {
+  // NOTA: `diff().affectedKeys()` solo incluye claves que CAMBIAN. Escribir
+  // `devuelto: 0` sobre un doc que ya tiene 0 no es un cambio: ese write
+  // modifica únicamente `fecha` y por eso la rama (g) lo acepta. Para probar
+  // la combinación hay que mover de verdad el otro campo.
+  await seed('r351a', createMemberObl({ devuelto: 0 }));
+  await seed('r351b', createMemberObl({ devuelto: 0 }));
+  await seed('r351c', createMemberObl({ devuelto: 0 }));
+  await assertFails(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r351a'), {
+      fecha: OCT_31(),
+      devuelto: 100,
+    })
+  );
+  await assertFails(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r351b'), {
+      fecha: OCT_31(),
+      monto: 1500,
+    })
+  );
+  await assertFails(
+    updateDoc(doc(dbAs(A), 'reintegros', 'r351c'), {
+      fecha: OCT_31(),
+      createdAt: serverTimestamp(),
+    })
+  );
+});
+
+test('3.52 — 5.0-fecha: bitácora acepta edicion/fecha y sigue rechazando entidad o tipo desconocidos', async () => {
+  await seed('r352', createMemberObl());
+  const db = dbAs(A);
+  const eventos = collection(db, 'reintegros', 'r352', 'eventos');
+  await assertSucceeds(
+    setDoc(doc(eventos, 'ev352ok'), {
+      registradoPor: A,
+      tipo: 'edicion',
+      entidad: 'fecha',
+      fechaAnterior: null,
+      fechaNueva: OCT_31(),
+      createdAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    setDoc(doc(eventos, 'ev352a'), {
+      registradoPor: A,
+      tipo: 'edicion',
+      entidad: 'desconocida',
+      createdAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    setDoc(doc(eventos, 'ev352b'), {
+      registradoPor: A,
+      tipo: 'fecha',
+      entidad: 'fecha',
+      createdAt: serverTimestamp(),
+    })
+  );
+});

@@ -39,6 +39,17 @@ export function assertDevueltoConsistente(obligacion, entregas) {
   );
 }
 
+// Fecha efectiva de la obligación (5.0-fecha): `fecha` manda; `createdAt` es
+// el fallback de los documentos cargados antes de esta subetapa (F-3, sin
+// migración ni backfill). Devuelve Date (o null) para que enRangoMes y la UI
+// usen la MISMA fuente de atribución: no usar `createdAt` directo en ningún
+// cálculo de período ni en la fila.
+export function fechaEfectivaDe(r) {
+  const f = r?.fecha ?? r?.createdAt ?? null;
+  if (!f) return null;
+  return f?.toDate?.() ?? new Date(f);
+}
+
 // Rango de mes SEMIABIERTO: [start, nextStart). Cubre el instante exacto
 // del primer día del mes siguiente (el closed-range perdía la medianoche
 // exacta del día 1 siguiente por el redondeo de milisegundos).
@@ -92,8 +103,9 @@ function esContraparteMiembro(r, uid) {
 
 // Entradas del mes (§6.2/I-8 + espejo 4.3c): devoluciones recibidas del
 // mes + Σ monto de obligaciones CREADAS POR EL USUARIO (registradoPor ===
-// uid) con movimientoInicial == "entrada" en el mes + espejo: obligación
-// ajena por_cobrar con dinero → mi ENTRADA en el mes de la alta.
+// uid) con movimientoInicial == "entrada" en el mes de su FECHA EFECTIVA
+// (5.0-fecha: `fecha` con fallback a `createdAt`) + espejo: obligación ajena
+// por_cobrar con dinero → mi ENTRADA en ese mismo mes.
 // ENTRADA ≠ SALIDA: este espejo exige dinero (regla de dominio de arriba).
 // Un ítem no genera entrada aunque la deuda exista. NO simetrizar con
 // espejoSalida.
@@ -121,7 +133,7 @@ export function entradasDelMes({
       (r) =>
         r.registradoPor === uid &&
         r.movimientoInicial === "entrada" &&
-        enRangoMes(r.createdAt, start, nextStart),
+        enRangoMes(fechaEfectivaDe(r), start, nextStart),
     )
     .reduce((a, r) => a + Number(r.monto || 0), 0);
   const espejoEntrada = activas
@@ -130,7 +142,7 @@ export function entradasDelMes({
         esContraparteMiembro(r, uid) &&
         r.sentido === "por_cobrar" &&
         esDineroInicial(r) &&
-        enRangoMes(r.createdAt, start, nextStart),
+        enRangoMes(fechaEfectivaDe(r), start, nextStart),
     )
     .reduce((a, r) => a + Number(r.monto || 0), 0);
   return recibidas + movimientos + espejoEntrada;
@@ -138,9 +150,10 @@ export function entradasDelMes({
 
 // Salidas del mes (§6.2/I-8 + espejo 4.3c): devoluciones realizadas del
 // mes + Σ monto de obligaciones CREADAS POR EL USUARIO con
-// movimientoInicial == "salida" en el mes + espejo: obligación ajena
+// movimientoInicial == "salida" en el mes de su FECHA EFECTIVA (5.0-fecha:
+// `fecha` con fallback a `createdAt`) + espejo: obligación ajena
 // por_devolver (la registró quien recibe) → la contraparte miembro ve su
-// SALIDA en el mes de la alta, sea efectivo prestado o una compra
+// SALIDA en ese mismo mes, sea efectivo prestado o una compra
 // adelantada: en ambos casos salió dinero de la cuenta.
 // SALIDA ≠ ENTRADA: aquí NO se filtra por tipo a propósito; es la
 // asimetría real del dominio (regla de arriba). NO simetrizar con
@@ -172,7 +185,7 @@ export function salidasDelMes({
       (r) =>
         r.registradoPor === uid &&
         r.movimientoInicial === "salida" &&
-        enRangoMes(r.createdAt, start, nextStart),
+        enRangoMes(fechaEfectivaDe(r), start, nextStart),
     )
     .reduce((a, r) => a + Number(r.monto || 0), 0);
   const espejoSalida = activas
@@ -180,7 +193,7 @@ export function salidasDelMes({
       (r) =>
         esContraparteMiembro(r, uid) &&
         r.sentido === "por_devolver" &&
-        enRangoMes(r.createdAt, start, nextStart),
+        enRangoMes(fechaEfectivaDe(r), start, nextStart),
     )
     .reduce((a, r) => a + Number(r.monto || 0), 0);
   return realizadas + movimientos + espejoSalida;

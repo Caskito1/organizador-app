@@ -234,6 +234,7 @@ export default function ReintegrosPage() {
               onPagar={(r, modo) => setPago({ r, modo })}
               ediciones={ediciones}
               onEditarObligacion={(r) => setEdicion({ modo: "obligacion", r })}
+              onEditarFecha={(r) => setEdicion({ modo: "fecha", r })}
               onEditarEntrega={(r, entrega) =>
                 setEdicion({ modo: "pago", r, entrega })
               }

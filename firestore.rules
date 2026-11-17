@@ -14,9 +14,12 @@ service cloud.firestore {
     // en la evidencia de 4.0; fuera del alcance de estas reglas.
     // Cubre: groups, gastos, ingresos, transferencias, fixed_expenses,
     // fixed_expense_entries, users.
-    // ─── Enmienda 4.5-fecha (03/11/2026, PENDIENTE DE DEPLOY) ───────────
+    // ─── Enmienda 4.5-fecha (03/11/2026, desplegada en el cierre de la 4.5) ─
     // Solo `gastos`: `fecha` opcional (tipo + rango) y `createdAt`
     // inmutable. El resto del bloque sigue siendo la copia de consola.
+    // ─── 5.0-fecha (17/11/2026, PENDIENTE DE DEPLOY) ────────────────────
+    // Solo `reintegros` (BLOQUE B): `fecha` opcional en el alta, rama (g) de
+    // update de un solo campo y `entidad: 'fecha'` en la bitácora.
     // ═══════════════════════════════════════════════════════════════════
 
     // ─────────────────────────────
@@ -317,6 +320,11 @@ match /fixed_expense_entries/{entryId} {
         // 17/10/2026 — sin confirmación bilateral (4.6 eliminada): el campo
         // confirmadaPor queda PROHIBIDO en el alta (esquema limpio).
         && !('confirmadaPor' in request.resource.data)
+        // 5.0-fecha: fecha del reintegro (OPCIONAL por compatibilidad con
+        // clientes viejos; la app la escribe siempre). Mismo rango que
+        // gastos/ingresos desde 4.5-fecha.
+        && ( !('fecha' in request.resource.data)
+             || fechaValida(request.resource.data.fecha) )
         && request.resource.data.createdAt == request.time;
 
       allow delete: if false;   // Criterio 3.7: sin borrado físico, NUNCA.
@@ -411,6 +419,22 @@ match /fixed_expense_entries/{entryId} {
                && request.resource.data.get('eliminacion', null) != null
                 && request.resource.data.eliminacion.eliminadaPor == uid()
               )
+          // (g) Editar FECHA de la obligación (5.0-fecha): SOLO el
+          // registrador, SOLO con devuelto == 0 (F-5) y SOLO sobre activa no
+          // condonada. hasOnly(['fecha']) deja congelado todo lo demás
+          // (monto, devuelto, constancias); `createdAt` ya está congelado por
+          // la identidad de arriba. `resource.data.get('fecha', null)`: un
+          // documento legacy no tiene el campo y evaluarlo directo rompería
+          // la regla. Mover la fecha NO habilita escrituras en cerradas.
+          || ( esRegistrador(rid)
+               && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['fecha'])
+               && fechaValida(request.resource.data.fecha)
+               && request.resource.data.fecha != resource.data.get('fecha', null)
+               && resource.data.devuelto == 0
+               && request.resource.data.devuelto == resource.data.devuelto
+               && resource.data.get('condonacion', null) == null
+             )
         );
 
       // ─── subcolección: eventos (bitácora, D-3) ──────────────────────
@@ -430,7 +454,11 @@ match /fixed_expense_entries/{entryId} {
                 // 'confirmacion' queda FUERA definitivamente: D-3 aprobó
                 // solo estos 4 tipos y la confirmación bilateral fue
                 // eliminada (17/10/2026) — no hay evento que registrar.
-          && request.resource.data.entidad in ['obligacion', 'entrega'];
+          // 5.0-fecha: 'fecha' es una ENTIDAD nueva (no un tipo nuevo): la
+          // edición de fecha es una acción propia, con su celda canónica en
+          // dominio.md §5.3 (`edicion/fecha` → fechaAnterior/fechaNueva).
+          && request.resource.data.entidad in
+               ['obligacion', 'entrega', 'fecha'];
         allow update, delete: if false;   // 3.14: create-only
       }
     }

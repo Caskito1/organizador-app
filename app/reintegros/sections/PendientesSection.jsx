@@ -25,6 +25,7 @@ export default function PendientesSection({
   onPagar,
   ediciones,
   onEditarObligacion,
+  onEditarFecha,
   onEditarEntrega,
   onAccionObligacion,
   onAccionEntrega,
@@ -62,6 +63,7 @@ export default function PendientesSection({
               onPagar={onPagar}
               ediciones={ediciones}
               onEditarObligacion={onEditarObligacion}
+              onEditarFecha={onEditarFecha}
               onEditarEntrega={onEditarEntrega}
               onAccionObligacion={onAccionObligacion}
               onAccionEntrega={onAccionEntrega}
@@ -94,6 +96,7 @@ export default function PendientesSection({
               onPagar={onPagar}
               ediciones={ediciones}
               onEditarObligacion={onEditarObligacion}
+              onEditarFecha={onEditarFecha}
               onEditarEntrega={onEditarEntrega}
               onAccionObligacion={onAccionObligacion}
               onAccionEntrega={onAccionEntrega}

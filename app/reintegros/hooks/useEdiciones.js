@@ -6,8 +6,8 @@
 // o red): se avisa por consola y esa obligación queda sin chips, el resto
 // sigue funcionando. Se desuscribe al cambiar de pestaña (`rids` vacíos) o
 // cuando una obligación deja de estar activa (sale de `rids`). Al mapear se
-// filtra por `entidad` (obligación vs entrega) y se conserva SOLO el último
-// evento de cada una.
+// filtra por `entidad` (obligación vs entrega vs fecha —5.0-fecha—) y se
+// conserva SOLO el último evento de cada una.
 
 "use client";
 
@@ -50,6 +50,7 @@ export default function useEdiciones(rids) {
         ),
         (snap) => {
           let obligacion = null;
+          let fecha = null;
           const entregas = {};
           for (const d of snap.docs) {
             const ev = { id: d.id, ...d.data() };
@@ -60,6 +61,12 @@ export default function useEdiciones(rids) {
               ) {
                 obligacion = ev;
               }
+            } else if (ev.entidad === "fecha") {
+              // 5.0-fecha: la edición de fecha es una entidad propia (no pisa
+              // el chip de monto). Se conserva el último evento.
+              if (!fecha || msDe(ev.createdAt) >= msDe(fecha.createdAt)) {
+                fecha = ev;
+              }
             } else if (ev.entidad === "entrega" && ev.entregaId) {
               const actual = entregas[ev.entregaId];
               if (!actual || msDe(ev.createdAt) >= msDe(actual.createdAt)) {
@@ -67,7 +74,10 @@ export default function useEdiciones(rids) {
               }
             }
           }
-          setData((prev) => ({ ...prev, [rid]: { obligacion, entregas } }));
+          setData((prev) => ({
+            ...prev,
+            [rid]: { obligacion, fecha, entregas },
+          }));
         },
         (err) => {
           // Falla de permisos o red: NO rompe la página; esta obligación

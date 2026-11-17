@@ -17,6 +17,7 @@ import {
   sumaEntregasNoEliminadas,
   assertDevueltoConsistente,
   enRangoMes,
+  fechaEfectivaDe,
   entradasDelMes,
   salidasDelMes,
 } from "../helpers/modelo";
@@ -200,14 +201,16 @@ export default function useReintegros(selectedMonth) {
     [devolucionesGated],
   );
 
-  // Índices del mes (§6.2): flows por createdAt (obl) y fechaPago (entrega).
+  // Índices del mes (§6.2): flows por FECHA EFECTIVA de la obligación
+  // (5.0-fecha: `fecha` con fallback a `createdAt`) y `fechaPago` de la
+  // entrega.
   const generadoPorRecuperar = useMemo(() => {
     if (!mes || !uid) return 0;
     return activas
       .filter(
         (r) =>
           sentidoDelViewer(r, uid) === "por_cobrar" &&
-          enRangoMes(r.createdAt, mes.start, mes.nextStart),
+          enRangoMes(fechaEfectivaDe(r), mes.start, mes.nextStart),
       )
       .reduce((a, r) => a + Number(r.monto || 0), 0);
   }, [activas, mes, uid]);
@@ -218,7 +221,7 @@ export default function useReintegros(selectedMonth) {
       .filter(
         (r) =>
           sentidoDelViewer(r, uid) === "por_devolver" &&
-          enRangoMes(r.createdAt, mes.start, mes.nextStart),
+          enRangoMes(fechaEfectivaDe(r), mes.start, mes.nextStart),
       )
       .reduce((a, r) => a + Number(r.monto || 0), 0);
   }, [activas, mes, uid]);

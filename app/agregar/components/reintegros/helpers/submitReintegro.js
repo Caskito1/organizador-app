@@ -19,7 +19,12 @@ import {
   doc,
   runTransaction,
   serverTimestamp,
+  Timestamp,
 } from "firebase/firestore";
+// 5.0-fecha: 'YYYY-MM-DD' → Date a medianoche LOCAL (helper puro compartido
+// con gastos/ingresos). Import RELATIVO con extensión: este archivo también
+// lo carga el harness con node --test (sin alias `@/`).
+import { fechaLocal } from "../../../../gastos/helpers/dateHelpers.js";
 import { ReintegroError } from "./submitDevolucion.js";
 
 export async function submitReintegro({
@@ -35,6 +40,7 @@ export async function submitReintegro({
   detalle,
   movimientoInicial,
   movimientoInicialTipo,
+  fechaISO,
   rid: ridParam,
 }) {
   // Montos: SIEMPRE enteros en pesos (decisión del usuario, 16/10/2026).
@@ -90,6 +96,34 @@ export async function submitReintegro({
     );
   }
 
+  // 5.0-fecha: `fechaISO` es OPCIONAL en el helper (compatibilidad con los
+  // llamados existentes del harness y con clientes viejos); la app la envía
+  // SIEMPRE (canSubmit). Si viene, se persiste `fecha` como Timestamp a
+  // medianoche LOCAL: un parseo UTC correría el día —y el mes— en el borde
+  // (misma convención que DevolucionModal y 4.5-fecha). Sin `fechaISO` el
+  // documento queda con la forma heredada y cuenta por `createdAt` (F-3).
+  let fecha = null;
+  if (fechaISO !== undefined && fechaISO !== null) {
+    if (typeof fechaISO !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(fechaISO)) {
+      throw new ReintegroError(
+        "FECHA_INVALIDA",
+        `fecha inválida: ${String(fechaISO)}`,
+      );
+    }
+    const [y, m, d] = fechaISO.split("-").map(Number);
+    const local = fechaLocal(fechaISO);
+    // El rollover de Date (2026-02-31 → 03/03) no debe pasar en silencio.
+    if (
+      Number.isNaN(local.getTime()) ||
+      local.getFullYear() !== y ||
+      local.getMonth() !== m - 1 ||
+      local.getDate() !== d
+    ) {
+      throw new ReintegroError("FECHA_INVALIDA", `fecha inválida: ${fechaISO}`);
+    }
+    fecha = Timestamp.fromDate(local);
+  }
+
   // Ajuste 6 (4.2): la UI puede enviar "" o undefined (estado vacío del
   // selector) para contraparte externa; se normaliza a null ANTES de armar
   // participantes y el payload. "" JAMÁS se persiste. Tipos no-string
@@ -142,6 +176,11 @@ export async function submitReintegro({
     // llamadas sin el parámetro quedan sin el campo (esquema limpio).
     if (movimientoInicialTipo !== undefined) {
       payload.movimientoInicialTipo = movimientoInicialTipo;
+    }
+    // 5.0-fecha: idem — solo cuando llega, para no ensuciar los documentos
+    // creados por llamados sin fecha (forma heredada, F-3).
+    if (fecha) {
+      payload.fecha = fecha;
     }
 
     tx.set(doc(db, "reintegros", rid), payload);

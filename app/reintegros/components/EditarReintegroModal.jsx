@@ -21,9 +21,12 @@ import { editarEntrega } from
   "@/app/agregar/components/reintegros/helpers/editarEntrega";
 import { editarObligacion } from
   "@/app/agregar/components/reintegros/helpers/editarObligacion";
+import { editarFechaObligacion } from
+  "@/app/agregar/components/reintegros/helpers/editarFechaObligacion";
 import { ReintegroError } from
   "@/app/agregar/components/reintegros/helpers/submitDevolucion";
-import { saldoDe } from "../helpers/modelo";
+import { saldoDe, fechaEfectivaDe } from "../helpers/modelo";
+import { isoDeFecha, hoyISO, fechaLocal } from "@/app/gastos/helpers/dateHelpers";
 import { MODAL_SHEET_CLASSES } from "@/app/components/ui/modalSheet";
 
 const TIMEOUT_UI_MS = 15000;
@@ -38,7 +41,16 @@ function fechaCorta(fecha) {
   return d.toLocaleDateString("es-AR");
 }
 
-function mensajeDeError(e) {
+// 'YYYY-MM-DD' → «octubre de 2026». Aviso de cambio de mes (F-6): mover la
+// fecha a un mes ya cerrado deja ese cierre desactualizado.
+function mesLargoDe(iso) {
+  return fechaLocal(iso).toLocaleDateString("es-AR", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function mensajeDeError(e, esFecha = false) {
   if (e instanceof ReintegroError) {
     if (e.code === "SALDO_INSUFICIENTE") {
       return "El nuevo importe supera el saldo permitido: el saldo cambió; revisá e intentá de nuevo.";
@@ -52,8 +64,19 @@ function mensajeDeError(e) {
     if (e.code === "MONTO_BLOQUEADO") {
       return "Ya hay pagos registrados: el monto solo se edita con $0 devuelto.";
     }
+    if (e.code === "FECHA_BLOQUEADA") {
+      return "Ya hay pagos registrados: la fecha solo se edita con $0 devuelto.";
+    }
+    if (e.code === "FECHA_SIN_CAMBIOS") {
+      return "La fecha es igual a la actual: no hay nada que guardar.";
+    }
+    if (e.code === "FECHA_INVALIDA") {
+      return "Elegí una fecha válida (no puede ser futura).";
+    }
     if (e.code === "NO_REGISTRADOR") {
-      return "Solo quien registró la obligación puede editar su monto.";
+      return esFecha
+        ? "Solo quien registró la obligación puede editar su fecha."
+        : "Solo quien registró la obligación puede editar su monto.";
     }
     if (e.code === "LIQUIDADA") {
       return "Esta obligación ya está saldada: no admite edición de pagos.";
@@ -87,6 +110,9 @@ export default function EditarReintegroModal({ modo, r, entrega, onClose }) {
 
   const uid = user?.uid ?? null;
   const esPago = modo === "pago";
+  // 5.0-fecha (U-2): tercer modo — editar la FECHA de la obligación, operación
+  // independiente de «Editar monto» (función, rama de regla y evento propios).
+  const esFecha = modo === "fecha";
 
   const viejo = esPago ? Number(entrega?.monto || 0) : Number(r.monto || 0);
   const devuelto = Number(r.devuelto || 0);
@@ -100,6 +126,10 @@ export default function EditarReintegroModal({ modo, r, entrega, onClose }) {
   const disponiblePago = saldo + viejo;
 
   const [montoDigits, setMontoDigits] = useState(() => String(viejo));
+  // 5.0-fecha: fecha precargada con la EFECTIVA (fecha ?? createdAt), que es
+  // la que el usuario ve en la fila.
+  const fechaActualISO = isoDeFecha(fechaEfectivaDe(r));
+  const [fechaISO, setFechaISO] = useState(fechaActualISO);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   // Tras un timeout no hay reintento posible: los campos y el botón quedan
@@ -127,13 +157,15 @@ export default function EditarReintegroModal({ modo, r, entrega, onClose }) {
   const monto = montoDigits ? Number(montoDigits) : 0;
 
   const sinCambios = monto === viejo;
+  const sinCambiosFecha = fechaISO === fechaActualISO;
   const excedeDisponible = esPago && monto > disponiblePago;
-  const puedeGuardar =
-    !!user &&
-    monto > 0 &&
-    !sinCambios &&
-    !excedeDisponible &&
-    !bloqueadoObligacion;
+  const puedeGuardar = esFecha
+    ? !!user && !!fechaISO && !sinCambiosFecha && !bloqueadoObligacion
+    : !!user &&
+      monto > 0 &&
+      !sinCambios &&
+      !excedeDisponible &&
+      !bloqueadoObligacion;
 
   async function handleGuardar() {
     if (!puedeGuardar || loading || timeoutModo || enviandoRef.current) return;
@@ -143,9 +175,11 @@ export default function EditarReintegroModal({ modo, r, entrega, onClose }) {
     setError(null);
     enVueloRef.current = true;
 
-    const intento = (esPago
-      ? editarEntrega({ db, uid, did: entrega.id, monto })
-      : editarObligacion({ db, uid, rid: r.id, monto })
+    const intento = (esFecha
+      ? editarFechaObligacion({ db, uid, rid: r.id, fechaISO })
+      : esPago
+        ? editarEntrega({ db, uid, did: entrega.id, monto })
+        : editarObligacion({ db, uid, rid: r.id, monto })
     )
       .then(() => "ok")
       .catch((err) => ({ err }));
@@ -175,7 +209,7 @@ export default function EditarReintegroModal({ modo, r, entrega, onClose }) {
           enviandoRef.current = false;
           console.error("[EditarReintegroModal]", err?.code, err);
           if (montadoRef.current) {
-            setError(mensajeDeError(err));
+            setError(mensajeDeError(err, esFecha));
             setTimeoutModo(false);
           }
         });
@@ -188,7 +222,7 @@ export default function EditarReintegroModal({ modo, r, entrega, onClose }) {
     if (resultado?.err) {
       const e = resultado.err;
       console.error("[EditarReintegroModal]", e?.code, e);
-      setError(mensajeDeError(e));
+      setError(mensajeDeError(e, esFecha));
       setLoading(false);
       return;
     }
@@ -221,12 +255,18 @@ export default function EditarReintegroModal({ modo, r, entrega, onClose }) {
         <div className="mx-auto mb-4 h-[4px] w-[40px] rounded-full bg-[rgba(255,255,255,0.15)]" />
 
         <h2 className="mb-1 font-sora text-[17px] font-bold text-text">
-          {esPago ? "Editar monto del pago" : "Editar monto"}
+          {esFecha
+            ? "Editar fecha"
+            : esPago
+              ? "Editar monto del pago"
+              : "Editar monto"}
         </h2>
         <p className="mb-4 text-[12px] text-text-muted">
-          {esPago
-            ? "Corregí el importe de este pago."
-            : "Corregí el importe de la obligación."}
+          {esFecha
+            ? "Corregí la fecha de la obligación: mueve el reintegro de mes."
+            : esPago
+              ? "Corregí el importe de este pago."
+              : "Corregí el importe de la obligación."}
         </p>
 
         {/* CONTEXTO */}
@@ -240,59 +280,103 @@ export default function EditarReintegroModal({ modo, r, entrega, onClose }) {
               ` · Pago de ${entrega?.realizadoPorNombre || ""} · ${fechaCorta(entrega?.fechaPago)}`}
           </p>
           <p className="mt-[6px] text-[12px] text-text-muted">
-            Monto actual:{" "}
-            <span className="font-sora font-bold text-text">
-              {money(viejo)}
-            </span>
-            {esPago && (
+            {esFecha ? (
               <>
-                {" · "}
-                Saldo de la obligación:{" "}
+                Fecha actual:{" "}
                 <span className="font-sora font-bold text-text">
-                  {money(saldo)}
+                  {fechaCorta(fechaEfectivaDe(r))}
                 </span>
+              </>
+            ) : (
+              <>
+                Monto actual:{" "}
+                <span className="font-sora font-bold text-text">
+                  {money(viejo)}
+                </span>
+                {esPago && (
+                  <>
+                    {" · "}
+                    Saldo de la obligación:{" "}
+                    <span className="font-sora font-bold text-text">
+                      {money(saldo)}
+                    </span>
+                  </>
+                )}
               </>
             )}
           </p>
         </div>
 
-        {/* MOTIVO — obligación con pagos: campo bloqueado (D-8(ii)) */}
+        {/* MOTIVO — obligación con pagos: campo bloqueado (D-8(ii)/F-5) */}
         {bloqueadoObligacion && (
           <p className="mb-4 rounded-[12px] border border-border bg-white/3 px-4 py-3 text-[11px] leading-[1.5] text-text-muted">
-            Ya hay pagos registrados ({money(devuelto)}): el monto solo se
-            edita antes del primer pago.
+            Ya hay pagos registrados ({money(devuelto)}):{" "}
+            {esFecha ? "la fecha" : "el monto"} solo se edita antes del primer
+            pago.
           </p>
         )}
 
-        {/* MONTO — dígitos, tope 12, precargado con el monto actual */}
-        <div className="relative mb-1 overflow-hidden rounded-[18px] border border-accent/30 bg-gradient-to-br from-accent/15 to-[#5b35d5]/20 px-[18px] py-4">
-          <p className="mb-[6px] text-[11px] font-medium tracking-[0.5px] text-[#c8aeffa6]">
-            MONTO ($)
-          </p>
-          <div className="flex items-center gap-1">
-            <span className="font-sora text-[22px] font-bold leading-none text-accent-light">
-              $
-            </span>
+        {/* FECHA — 5.0-fecha: único campo del modo `fecha` */}
+        {esFecha ? (
+          <div className="mb-1 flex flex-col gap-[6px]">
+            <label className="text-[12px] font-medium tracking-[0.3px] text-text-muted">
+              FECHA DEL MOVIMIENTO
+            </label>
             <input
-              type="text"
-              inputMode="numeric"
-              placeholder="0"
-              value={montoDisplay}
-              onChange={(e) => setMonto(e.target.value)}
+              type="date"
+              value={fechaISO}
+              min="2020-01-01"
+              max={hoyISO()}
+              onChange={(e) => setFechaISO(e.target.value)}
               disabled={bloqueado || bloqueadoObligacion}
-              className="w-full border-none bg-transparent p-0 font-sora text-[28px] font-bold tracking-[-1px] text-text outline-none focus:ring-0"
+              className="rounded-[14px] border border-border bg-white/3 px-4 py-3 text-[14px] text-text"
             />
+            {fechaISO && fechaISO !== fechaActualISO && (
+              <p className="text-[11px] leading-[1.5] text-text-muted">
+                El reintegro pasará a contabilizarse en{" "}
+                {mesLargoDe(fechaISO)}. Si ese mes ya está cerrado, su resumen
+                queda desactualizado y hay que revisarlo.
+              </p>
+            )}
+            {sinCambiosFecha && !bloqueadoObligacion && (
+              <p className="text-[11px] text-text-muted">
+                Sin cambios: la fecha es la actual.
+              </p>
+            )}
           </div>
-        </div>
-        {excedeDisponible && (
-          <p className="mb-3 text-[11px] text-negative">
-            El importe supera lo disponible para este pago ({money(disponiblePago)}).
-          </p>
-        )}
-        {sinCambios && monto > 0 && !bloqueadoObligacion && (
-          <p className="mb-3 text-[11px] text-text-muted">
-            Sin cambios: el monto es el actual.
-          </p>
+        ) : (
+          <>
+            {/* MONTO — dígitos, tope 12, precargado con el monto actual */}
+            <div className="relative mb-1 overflow-hidden rounded-[18px] border border-accent/30 bg-gradient-to-br from-accent/15 to-[#5b35d5]/20 px-[18px] py-4">
+              <p className="mb-[6px] text-[11px] font-medium tracking-[0.5px] text-[#c8aeffa6]">
+                MONTO ($)
+              </p>
+              <div className="flex items-center gap-1">
+                <span className="font-sora text-[22px] font-bold leading-none text-accent-light">
+                  $
+                </span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="0"
+                  value={montoDisplay}
+                  onChange={(e) => setMonto(e.target.value)}
+                  disabled={bloqueado || bloqueadoObligacion}
+                  className="w-full border-none bg-transparent p-0 font-sora text-[28px] font-bold tracking-[-1px] text-text outline-none focus:ring-0"
+                />
+              </div>
+            </div>
+            {excedeDisponible && (
+              <p className="mb-3 text-[11px] text-negative">
+                El importe supera lo disponible para este pago ({money(disponiblePago)}).
+              </p>
+            )}
+            {sinCambios && monto > 0 && !bloqueadoObligacion && (
+              <p className="mb-3 text-[11px] text-text-muted">
+                Sin cambios: el monto es el actual.
+              </p>
+            )}
+          </>
         )}
 
         {error && (
@@ -312,7 +396,7 @@ export default function EditarReintegroModal({ modo, r, entrega, onClose }) {
               : "cursor-pointer bg-gradient-to-br from-[#9d7bff] to-[#5b35d5] shadow-[0_8px_28px_rgba(138,100,255,0.38)] hover:scale-[1.01]"
           }`}
         >
-          {loading ? "Guardando…" : "Guardar monto"}
+          {loading ? "Guardando…" : esFecha ? "Guardar fecha" : "Guardar monto"}
         </button>
       </div>
     </div>

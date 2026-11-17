@@ -19,6 +19,7 @@ import { collection, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthContext";
 import { useGroups } from "@/lib/GroupContext";
+import { hoyISO } from "@/app/gastos/helpers/dateHelpers";
 
 const MAX_MONTO_DIGITOS = 12;
 
@@ -43,6 +44,11 @@ export function useReintegroModal() {
 
   const [concepto, setConcepto] = useState("");
   const [detalle, setDetalle] = useState("");
+
+  // 5.0-fecha (U-1): fecha del movimiento, default HOY. La app la envía
+  // SIEMPRE (canSubmit la exige); el modelo deriva el período de `fecha` con
+  // fallback a `createdAt` para los documentos viejos (F-3).
+  const [fecha, setFecha] = useState(hoyISO);
 
   // Monto: SOLO dígitos crudos (tope 12); la vista formatea sin decimales.
   const [montoDigits, setMontoDigits] = useState("");
@@ -202,7 +208,7 @@ export function useReintegroModal() {
       : nombreExterno.trim();
 
   const canSubmit =
-    !!user && !!concepto.trim() && monto > 0 && contraparteValida;
+    !!user && !!concepto.trim() && monto > 0 && contraparteValida && !!fecha;
 
   return {
     rid,
@@ -230,6 +236,9 @@ export function useReintegroModal() {
     setConcepto,
     detalle,
     setDetalle,
+
+    fecha,
+    setFecha,
 
     monto,
     montoDisplay,
