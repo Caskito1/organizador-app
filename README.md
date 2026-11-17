@@ -40,8 +40,11 @@ tests/             unitarios, reglas de Firestore y harness
 
 ## Puesta en marcha
 
+Requisitos: Node.js 20 o superior (requisito de Next.js 16) y npm.
+
 ```bash
 npm install
+cp .env.example .env.local     # Windows PowerShell: Copy-Item .env.example .env.local
 npm run dev
 ```
 
@@ -49,7 +52,7 @@ Abrir `http://localhost:3000`.
 
 ### Variables de entorno
 
-Crear `.env.local` (no se versiona):
+`.env.local` no se versiona; [`.env.example`](.env.example) lista solo los nombres. Los valores se copian de la consola del proyecto de Firebase (Configuración del proyecto → Tus apps):
 
 ```dotenv
 NEXT_PUBLIC_FIREBASE_API_KEY=
@@ -60,6 +63,10 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
 NEXT_PUBLIC_FIREBASE_APP_ID=
 ```
 
+### Emulador local (opcional)
+
+Para desarrollar contra el emulador de Firestore, crear `.env.development.local` con `NEXT_PUBLIC_USE_EMULATOR=true`. Solo lo carga `next dev`: `next build` y Vercel nunca conectan el emulador.
+
 ## Tests
 
 ```bash
@@ -68,7 +75,7 @@ npm run test:rules
 npm run harness:reintegros
 ```
 
-Los tests de reglas y el harness requieren Firebase Emulator Suite.
+`test:rules` y `harness:reintegros` requieren Firebase Emulator Suite (incluida en `devDependencies`) y Java instalado. `npm run seed:emulator` siembra datos de prueba en el emulador.
 
 ## Seguridad
 
