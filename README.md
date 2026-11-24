@@ -72,10 +72,10 @@ Para desarrollar contra el emulador de Firestore, crear `.env.development.local`
 ```bash
 npm run test:gastos
 npm run test:rules
-npm run harness:reintegros
+npm run harness
 ```
 
-`test:rules` y `harness:reintegros` requieren Firebase Emulator Suite (incluida en `devDependencies`) y Java instalado. `npm run seed:emulator` siembra datos de prueba en el emulador.
+`test:rules` y `harness` (integración contra el emulador: reintegros y balance) requieren Firebase Emulator Suite (incluida en `devDependencies`) y Java instalado. `npm run seed:emulator` siembra datos de prueba en el emulador.
 
 ## Seguridad
 

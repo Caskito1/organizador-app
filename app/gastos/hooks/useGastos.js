@@ -10,6 +10,10 @@ import {
   fechaEfectiva,
   porFechaDesc,
 } from "../helpers/dateHelpers";
+import {
+  esPagado,
+  parteDelUsuarioDeFijo,
+} from "../helpers/fijosCriterio";
 import subscribeGastos from "../services/subscribeGastos";
 import subscribeFixedExpenses from "../services/subscribeFixedExpenses";
 
@@ -81,22 +85,21 @@ export default function useGastos(mesActual) {
   .filter((e) => e.groupId)
   .map((e) => ({
     ...e,
-    montoPersonal: Number(e.montoTotal || 0) / 2,
+    montoPersonal: parteDelUsuarioDeFijo(e),
   }));
 
 const fixedPersonales = fixedEntries
   .filter((e) => !e.groupId)
   .map((e) => ({
     ...e,
-    montoPersonal: Number(e.montoTotal || 0),
+    montoPersonal: parteDelUsuarioDeFijo(e),
   }));
   // Total del mes / Total real: solo entra lo EFECTIVAMENTE PAGADO.
-  // Criterio = esPagado. NO usar `estado`: "saldado" es balance, no pago, y
-  // "pagado_hasta" se calcula antes de verificar el pago (useFixedExpenses.js:120-121).
-  // El anual vigente cuenta aunque paidByUid sea null (registrarGasto lo resetea).
-  const esPagado = (e) =>
-    !!e.paidByUid ||
-    (!!e.pagoHasta && e.pagoHasta > e.periodo);
+  // El criterio vive en ../helpers/fijosCriterio (5.1, A-1): `esPagado` y la
+  // parte 50 %/100 %, compartidos con el balance. NO usar `estado`: "saldado"
+  // es balance, no pago, y "pagado_hasta" se calcula antes de verificar el
+  // pago (useFixedExpenses.js:120-121). El anual vigente cuenta aunque
+  // paidByUid sea null (registrarGasto lo resetea).
 
   const fixedPagadas = fixedEntries.filter(esPagado);
 
@@ -104,11 +107,10 @@ const fixedPersonales = fixedEntries
   (a, e) => a + Number(e.montoTotal || 0),
   0,
 );
- const totalFixed = fixedPagadas.reduce((a, e) => {
-  const monto = Number(e.montoTotal || 0);
-
-  return a + (e.groupId ? monto / 2 : monto);
-}, 0);
+ const totalFixed = fixedPagadas.reduce(
+  (a, e) => a + parteDelUsuarioDeFijo(e),
+  0,
+);
 
   const totalPersonales = gastosPersonales.reduce((a, g) => a + Number(g.monto || 0), 0);
   const totalGruposUsuario = gastosPorGrupo.reduce((a, g) => a + g.totalUsuario, 0);
