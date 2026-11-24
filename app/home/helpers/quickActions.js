@@ -72,13 +72,13 @@ const quickActions = [
 
   {
     icon: IconStats,
-    label: "Estadísticas",
-    sub: "Próximamente",
-    path: null,
-    color: "var(--text-muted)",
-    colorBg: "rgba(255,255,255,0.03)",
-    colorBorder: "rgba(255,255,255,0.07)",
-    disabled: true,
+    label: "Balances",
+    sub: "Caja, pendientes y tendencia",
+    path: "/balances",
+    color: "var(--accent)",
+    colorBg: "rgba(138,100,255,0.1)",
+    colorBorder: "rgba(138,100,255,0.22)",
+    disabled: false,
   },
 ];
 

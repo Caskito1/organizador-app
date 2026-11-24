@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test:gastos": "node --experimental-detect-module --test tests/unit/",
     "test:rules": "firebase emulators:exec --only firestore --project demo-finanzas \"node --test --test-concurrency=1 tests/rules/\"",
-    "harness": "firebase emulators:exec --only firestore --project demo-finanzas \"node --experimental-detect-module --test tests/harness/\"",
+    "harness": "firebase emulators:exec --only firestore --project demo-finanzas \"node --experimental-detect-module --test --test-concurrency=1 tests/harness/\"",
     "seed:emulator": "node --experimental-detect-module scripts/seed-emulator.mjs"
   },
   "dependencies": {

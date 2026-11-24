@@ -9,7 +9,13 @@ export default function Acordeon({
   children,
 
   empty = false,
+
+  // Formateador opcional del total (5.2: /balances pasa su helper y muestra
+  // los negativos como -$200). Default: el formato histórico `$1.234`.
+  formatearTotal = (valor) =>
+    `$${Number(valor).toLocaleString("es-AR")}`,
 }) 
+
 
 
 {
@@ -31,7 +37,7 @@ export default function Acordeon({
           </div>
 
           <span className="font-sora whitespace-nowrap text-[15px] font-bold text-accent-light">
-            $0
+            {formatearTotal(0)}
           </span>
         </div>
 
@@ -62,10 +68,7 @@ export default function Acordeon({
   <div className="flex items-center gap-[10px]">
     <div className="flex flex-col items-end">
       <span className="font-sora whitespace-nowrap text-[15px] font-bold text-accent-light leading-none">
-        $
-        {Number(total).toLocaleString(
-          "es-AR",
-        )}
+        {formatearTotal(total)}
       </span>
 
       {subtitle && (
