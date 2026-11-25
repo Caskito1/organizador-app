@@ -1,5 +1,7 @@
 // balances/sections/TendenciaSection.jsx
-// Bloque 4 «Tendencia» (5.2, C-7): 12 meses, tres gráficos SVG con su métrica.
+// Bloque 4 «Tendencia» (5.2, C-7; 5.2-bis): hasta 5 meses desde el piso
+// 2026-09, tres gráficos SVG con su métrica. El gráfico 3 solo dibuja meses
+// con cierre real.
 
 "use client";
 
@@ -7,10 +9,16 @@ import GlassCard from "@/app/components/layout/GlassCard";
 
 import GraficoLineas from "../components/GraficoLineas";
 import {
+  estadoTendencia,
   filasConCierre,
   filasDesdePrimerDato,
 } from "../helpers/cadenaSaldos";
 import { etiquetaMesCorto, formatearMonto } from "../helpers/formato";
+
+const MENSAJES_VACIO = {
+  "sin-datos": "Sin datos para este período",
+  "sin-confiables": "Sin meses confiables en este período",
+};
 
 function Tarjeta({ titulo, children }) {
   return (
@@ -34,22 +42,32 @@ function detallePromedios(metricas) {
   return `Promedio · ingresos ${ingresos} · egresos ${egresos}`;
 }
 
-export default function TendenciaSection({ filas, metricas }) {
-  const dibujadas = filasDesdePrimerDato(filas);
+function etiquetaTendencia(cantidad) {
+  return `TENDENCIA · ${cantidad} ${cantidad === 1 ? "MES" : "MESES"}`;
+}
+
+export default function TendenciaSection({
+  filas,
+  filasTendencia,
+  metricas,
+}) {
+  const dibujadas = filasDesdePrimerDato(filasTendencia);
 
   if (dibujadas.length === 0) {
+    const estado = estadoTendencia(filas);
+
     return (
       <GlassCard>
         <p className="text-[13px] font-semibold text-text">Tendencia</p>
         <p className="mt-1 text-[12px] text-text-muted">
-          Todavía no hay meses con datos.
+          {MENSAJES_VACIO[estado]}
         </p>
       </GlassCard>
     );
   }
 
   const labels = dibujadas.map((fila) => etiquetaMesCorto(fila.mes));
-  const conCierre = filasConCierre(filas);
+  const conCierre = filasConCierre(filasTendencia);
   const labelsCierre = conCierre.map((fila) => etiquetaMesCorto(fila.mes));
 
   const seriesIngresos = [
@@ -89,7 +107,7 @@ export default function TendenciaSection({ filas, metricas }) {
   return (
     <div className="flex flex-col gap-[10px]">
       <p className="text-[12px] tracking-[0.5px] text-text-muted">
-        TENDENCIA · 12 MESES
+        {etiquetaTendencia(dibujadas.length)}
       </p>
 
       <Tarjeta titulo="Ingresos vs egresos">
@@ -120,7 +138,7 @@ export default function TendenciaSection({ filas, metricas }) {
       </Tarjeta>
 
       <Tarjeta titulo="Esperado vs real">
-        {metricas.mesesConCierre === 0 ? (
+        {conCierre.length === 0 ? (
           <p className="py-3 text-[11px] text-text-muted">
             Sin cierres cargados.
           </p>

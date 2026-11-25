@@ -11,7 +11,15 @@
 
 const MES_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
-export const MESES_VENTANA = 12;
+// 5.2-bis: la tendencia muestra como máximo 5 meses (el seleccionado y los 4
+// anteriores). El tope puede vivir en `ventanaMeses` porque la ventana siempre
+// contiene el mes seleccionado; el piso, en cambio, se aplica solo a la
+// tendencia y nunca a las filas del ledger (ver `filtrarTendencia`).
+export const MESES_TENDENCIA = 5;
+
+// Piso de la tendencia: los meses previos a 2026-09 no están completos (cargas
+// parciales). Se elimina cuando esos meses previos estén completos.
+export const PRIMER_MES_CONFIABLE = "2026-09";
 
 // Date → 'YYYY-MM' local.
 export function mesISO(fecha) {
@@ -33,7 +41,7 @@ export function sumarMeses(mes, delta) {
 }
 
 // Ventana de N meses terminando en `mes` (orden viejo → nuevo).
-export function ventanaMeses(mes, cantidad = MESES_VENTANA) {
+export function ventanaMeses(mes, cantidad = MESES_TENDENCIA) {
   const meses = [];
 
   for (let i = cantidad - 1; i >= 0; i -= 1) {
@@ -184,6 +192,29 @@ export function filasConCierre(filas) {
   return filas.filter((fila) => fila.diferencia !== null);
 }
 
+// ¿Hay actividad en la ventana? Incluye los meses previos al piso: sirve para
+// distinguir «sin datos» de «sin meses confiables» en la tendencia.
+export function hayActividad(filas) {
+  return filas.some(tieneActividad);
+}
+
+// La tendencia arranca en el piso (2026-09), pero solo para la tendencia: no se
+// aplica a `ventanaMeses` ni a las filas del ledger del mes seleccionado.
+export function filtrarTendencia(filas, piso = PRIMER_MES_CONFIABLE) {
+  return filas.filter((fila) => fila.mes >= piso);
+}
+
+// Estado de la tendencia: «ok» | «sin-datos» | «sin-confiables».
+export function estadoTendencia(filas, piso = PRIMER_MES_CONFIABLE) {
+  const confiables = filtrarTendencia(filas, piso);
+
+  if (filasDesdePrimerDato(confiables).length > 0) return "ok";
+
+  return hayActividad(filas) ? "sin-confiables" : "sin-datos";
+}
+
+// Métricas de la tendencia. Recibe las filas ya filtradas por
+// `filtrarTendencia` (el hook aplica el piso antes de llamarla).
 export function metricasTendencia(filas) {
   const dibujadas = filasDesdePrimerDato(filas);
   const cantidad = dibujadas.length;

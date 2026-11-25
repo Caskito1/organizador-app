@@ -17,8 +17,9 @@ import { cargarDatosBalance } from "@/app/balance/services/balanceDelMes";
 
 import { BalancesError } from "../helpers/errores";
 import {
-  MESES_VENTANA,
+  MESES_TENDENCIA,
   construirFilas,
+  filtrarTendencia,
   mesISO,
   metricasTendencia,
   netoInversiones,
@@ -106,7 +107,7 @@ export default function useBalances(selectedMonth) {
       return [];
     }
 
-    const meses = ventanaMeses(mes, MESES_VENTANA);
+    const meses = ventanaMeses(mes, MESES_TENDENCIA);
     const balancesPorMes = {};
 
     for (const clave of meses) {
@@ -132,7 +133,14 @@ export default function useBalances(selectedMonth) {
     [filas, mes],
   );
 
-  const metricas = useMemo(() => metricasTendencia(filas), [filas]);
+  // 5.2-bis: el piso de la tendencia no toca `filas` (las usa el ledger del mes
+  // seleccionado); solo recorta la ventana que se dibuja y sus métricas.
+  const filasTendencia = useMemo(() => filtrarTendencia(filas), [filas]);
+
+  const metricas = useMemo(
+    () => metricasTendencia(filasTendencia),
+    [filasTendencia],
+  );
 
   const detalle = useMemo(() => {
     if (!fila) return null;
@@ -251,6 +259,7 @@ export default function useBalances(selectedMonth) {
     mes,
     fila,
     filas,
+    filasTendencia,
     metricas,
     detalle,
     prefsMes: estado.prefs?.meses?.[mes] ?? null,

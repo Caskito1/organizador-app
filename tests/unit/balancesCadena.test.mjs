@@ -7,9 +7,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  MESES_TENDENCIA,
+  PRIMER_MES_CONFIABLE,
   construirFilas,
+  estadoTendencia,
   filasConCierre,
   filasDesdePrimerDato,
+  filtrarTendencia,
+  hayActividad,
   mesISO,
   metricasTendencia,
   netoInversiones,
@@ -53,16 +58,26 @@ function filaDe({ mes = "2026-10", prefs = {}, balances = {}, ahora = AHORA } = 
   return fila;
 }
 
-test("C-01 — mesISO, sumarMeses y ventana de 12 (cruce de año y orden)", () => {
+test("C-01 — mesISO, sumarMeses y ventana de 5 (cruce de año y orden)", () => {
   assert.equal(mesISO(new Date(2026, 9, 5)), "2026-10");
   assert.equal(sumarMeses("2026-01", -1), "2025-12");
   assert.equal(sumarMeses("2026-12", 1), "2027-01");
 
-  const ventana = ventanaMeses("2026-11", 12);
+  assert.equal(MESES_TENDENCIA, 5);
 
-  assert.equal(ventana.length, 12);
-  assert.equal(ventana[0], "2025-12");
-  assert.equal(ventana[11], "2026-11");
+  const ventana = ventanaMeses("2026-11", MESES_TENDENCIA);
+
+  assert.equal(ventana.length, 5);
+  assert.equal(ventana[0], "2026-07");
+  assert.equal(ventana[4], "2026-11");
+
+  assert.deepEqual(ventanaMeses("2026-01", MESES_TENDENCIA), [
+    "2025-09",
+    "2025-10",
+    "2025-11",
+    "2025-12",
+    "2026-01",
+  ]);
 });
 
 test("C-02 — normalizarMeses: vacío/tipos inválidos se ignoran", () => {
@@ -248,8 +263,13 @@ test("C-12 — esperado vs real saltea meses sin cierre", () => {
   );
 });
 
-test("C-13 — métricas: promedios, acumulado y gap", () => {
+test("C-13 — métricas sobre la ventana dibujada (piso 2026-09)", () => {
   const filas = [
+    {
+      mes: "2026-08",
+      balance: balance({ uyu: 999, egresos: 999, movimiento: 999 }),
+      diferencia: 999,
+    },
     {
       mes: "2026-09",
       balance: balance({ uyu: 100, egresos: 50, movimiento: 10 }),
@@ -262,7 +282,7 @@ test("C-13 — métricas: promedios, acumulado y gap", () => {
     },
   ];
 
-  const metricas = metricasTendencia(filas);
+  const metricas = metricasTendencia(filtrarTendencia(filas));
 
   assert.equal(metricas.promedioIngresos, 150);
   assert.equal(metricas.promedioEgresos, 50);
@@ -287,4 +307,49 @@ test("C-14 — ventana sin actividad: vacío y métricas neutras", () => {
   assert.equal(metricas.acumuladoMovimiento, 0);
   assert.equal(metricas.promedioGap, null);
   assert.equal(metricas.mesesDibujados, 0);
+});
+
+test("C-15 — tendencia: piso 2026-09 y ventana de 5", () => {
+  const filas = [
+    { mes: "2026-07", balance: balance({ uyu: 100 }) },
+    { mes: "2026-08", balance: balance() },
+    { mes: "2026-09", balance: balance({ uyu: 100 }) },
+    { mes: "2026-10", balance: balance() },
+    { mes: "2026-11", balance: balance() },
+  ];
+
+  assert.equal(PRIMER_MES_CONFIABLE, "2026-09");
+  assert.deepEqual(
+    filtrarTendencia(filas).map((fila) => fila.mes),
+    ["2026-09", "2026-10", "2026-11"],
+  );
+  assert.equal(hayActividad(filas), true);
+  assert.equal(estadoTendencia(filas), "ok");
+});
+
+test("C-16 — tendencia sin actividad: «sin datos»", () => {
+  const filas = [
+    { mes: "2026-09", balance: balance(), diferencia: null },
+    { mes: "2026-10", balance: balance(), diferencia: null },
+  ];
+
+  assert.equal(hayActividad(filas), false);
+  assert.equal(estadoTendencia(filas), "sin-datos");
+  assert.deepEqual(filasDesdePrimerDato(filtrarTendencia(filas)), []);
+});
+
+test("C-17 — actividad solo antes del piso: «sin meses confiables»", () => {
+  const filas = [
+    { mes: "2026-07", balance: balance({ uyu: 100 }), diferencia: null },
+    { mes: "2026-08", balance: balance(), diferencia: null },
+    { mes: "2026-09", balance: balance(), diferencia: null },
+  ];
+
+  assert.equal(hayActividad(filas), true);
+  assert.equal(estadoTendencia(filas), "sin-confiables");
+  assert.deepEqual(
+    filtrarTendencia(filas).map((fila) => fila.mes),
+    ["2026-09"],
+  );
+  assert.deepEqual(filasDesdePrimerDato(filtrarTendencia(filas)), []);
 });

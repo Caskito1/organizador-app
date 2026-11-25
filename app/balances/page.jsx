@@ -75,7 +75,11 @@ export default function BalancesPage() {
               esEnCurso={b.esEnCurso}
             />
 
-            <TendenciaSection filas={b.filas} metricas={b.metricas} />
+            <TendenciaSection
+              filas={b.filas}
+              filasTendencia={b.filasTendencia}
+              metricas={b.metricas}
+            />
 
             <DetalleSection
               detalle={b.detalle}
