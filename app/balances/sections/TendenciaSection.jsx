@@ -6,7 +6,10 @@
 import GlassCard from "@/app/components/layout/GlassCard";
 
 import GraficoLineas from "../components/GraficoLineas";
-import { filasDesdePrimerDato } from "../helpers/cadenaSaldos";
+import {
+  filasConCierre,
+  filasDesdePrimerDato,
+} from "../helpers/cadenaSaldos";
 import { etiquetaMesCorto, formatearMonto } from "../helpers/formato";
 
 function Tarjeta({ titulo, children }) {
@@ -46,7 +49,8 @@ export default function TendenciaSection({ filas, metricas }) {
   }
 
   const labels = dibujadas.map((fila) => etiquetaMesCorto(fila.mes));
-  const labelsTodos = filas.map((fila) => etiquetaMesCorto(fila.mes));
+  const conCierre = filasConCierre(filas);
+  const labelsCierre = conCierre.map((fila) => etiquetaMesCorto(fila.mes));
 
   const seriesIngresos = [
     {
@@ -73,12 +77,12 @@ export default function TendenciaSection({ filas, metricas }) {
     {
       id: "esperada",
       color: "var(--accent2)",
-      values: filas.map((fila) => fila.cajaEsperadaAlCierre),
+      values: conCierre.map((fila) => fila.cajaEsperadaAlCierre),
     },
     {
       id: "real",
       color: "var(--user-b)",
-      values: filas.map((fila) => fila.cajaRealAlCierre),
+      values: conCierre.map((fila) => fila.cajaRealAlCierre),
     },
   ];
 
@@ -123,7 +127,7 @@ export default function TendenciaSection({ filas, metricas }) {
         ) : (
           <>
             <GraficoLineas
-              labels={labelsTodos}
+              labels={labelsCierre}
               series={seriesContraste}
               formatearValor={formatearMonto}
               ariaLabel="Caja esperada y real al cierre"
