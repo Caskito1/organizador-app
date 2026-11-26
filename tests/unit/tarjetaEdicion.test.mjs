@@ -1,7 +1,7 @@
 // tests/unit/tarjetaEdicion.test.mjs
-// 6.2 — reglas de edición (sin emulador). Protege PROPUESTA-ETAPA-6.md §12.6
-// y la decisión A-5: compras nuevas (cuota 1/n, ciclo sin verificar); apertura
-// editable solo mientras ninguna cuota cayó en un ciclo pagado/consolidado.
+// 6.2 — reglas de edición (sin emulador). Protege PROPUESTA-ETAPA-6.md §12.6:
+// compras editables solo si son nuevas (cuota 1/n), del ciclo ACTUAL y con el
+// ciclo sin verificar. La apertura (A-5) queda para 6.4.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -24,29 +24,74 @@ const compra = {
   fecha: d(2026, 10, 10),
 };
 
-test("esCompraEditable: solo cuota 1/n en ciclo sin verificar", () => {
+test("esCompraEditable: solo cuota 1/n, ciclo actual y sin verificar", () => {
+  // Ciclo actual, cuota 1/6, sin verificar → editable.
   assert.equal(
-    esCompraEditable(compra, { cicloKey: "2026-10", estado: "sin_verificar", ...OCA }),
+    esCompraEditable(compra, {
+      cicloKey: "2026-10",
+      cicloActual: "2026-10",
+      estado: "sin_verificar",
+      ...OCA,
+    }),
     true,
   );
-  // Cuota 2/6 → no editable.
+
+  // Ciclo pasado (cuota 1/6 pero ya no es el actual) → NO editable.
   assert.equal(
-    esCompraEditable(compra, { cicloKey: "2026-11", estado: "sin_verificar", ...OCA }),
+    esCompraEditable(compra, {
+      cicloKey: "2026-10",
+      cicloActual: "2026-11",
+      estado: "sin_verificar",
+      ...OCA,
+    }),
     false,
   );
-  // Ciclo consolidado → no editable aunque sea cuota 1.
+
+  // Cuota 2/6 → NO editable.
   assert.equal(
-    esCompraEditable(compra, { cicloKey: "2026-10", estado: "por_pagar", ...OCA }),
+    esCompraEditable(compra, {
+      cicloKey: "2026-11",
+      cicloActual: "2026-11",
+      estado: "sin_verificar",
+      ...OCA,
+    }),
     false,
   );
-  // Fuera de la vida útil → no editable.
+
+  // Ciclo consolidado → NO editable.
   assert.equal(
-    esCompraEditable(compra, { cicloKey: "2027-04", estado: "sin_verificar", ...OCA }),
+    esCompraEditable(compra, {
+      cicloKey: "2026-10",
+      cicloActual: "2026-10",
+      estado: "por_pagar",
+      ...OCA,
+    }),
+    false,
+  );
+
+  // Fuera de la vida útil → NO editable.
+  assert.equal(
+    esCompraEditable(compra, {
+      cicloKey: "2027-04",
+      cicloActual: "2027-04",
+      estado: "sin_verificar",
+      ...OCA,
+    }),
+    false,
+  );
+
+  // Sin cicloActual → NO editable.
+  assert.equal(
+    esCompraEditable(compra, {
+      cicloKey: "2026-10",
+      estado: "sin_verificar",
+      ...OCA,
+    }),
     false,
   );
 });
 
-test("esAperturaEditable: true si ningún ciclo de su rango está consolidado/pagado", () => {
+test("esAperturaEditable (6.4): true si ningún ciclo de su rango está consolidado/pagado", () => {
   const plan = {
     descripcion: "opencodeGo",
     moneda: "UYU",
@@ -56,12 +101,10 @@ test("esAperturaEditable: true si ningún ciclo de su rango está consolidado/pa
   };
 
   assert.equal(esAperturaEditable(plan, { ciclos: {} }), true);
-  // Un ciclo FUTURO del rango sin verificar no bloquea.
   assert.equal(
     esAperturaEditable(plan, { ciclos: { "2027-05": { estado: "sin_verificar" } } }),
     true,
   );
-  // Un ciclo del rango consolidado bloquea.
   assert.equal(
     esAperturaEditable(plan, { ciclos: { "2026-10": { estado: "por_pagar" } } }),
     false,
@@ -70,7 +113,6 @@ test("esAperturaEditable: true si ningún ciclo de su rango está consolidado/pa
     esAperturaEditable(plan, { ciclos: { "2026-11": { estado: "pagada" } } }),
     false,
   );
-  // Un ciclo fuera del rango no bloquea.
   assert.equal(
     esAperturaEditable(plan, { ciclos: { "2026-09": { estado: "pagada" } } }),
     true,

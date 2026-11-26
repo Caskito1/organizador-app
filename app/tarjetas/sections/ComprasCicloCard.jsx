@@ -14,7 +14,7 @@ export default function ComprasCicloCard({ comprasCiclo, esEditable, onMenu }) {
 
       {comprasCiclo.length === 0 ? (
         <p className="mt-3 text-[12px] text-text-muted">
-          Sin compras en este ciclo.
+          Sin datos de este mes.
         </p>
       ) : (
         <div className="mt-2">

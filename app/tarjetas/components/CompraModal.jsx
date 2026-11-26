@@ -9,11 +9,22 @@ import { useState } from "react";
 import { MODAL_SHEET_CLASSES } from "@/app/components/ui/modalSheet";
 import { fechaLocal, hoyISO, isoDeFecha } from "@/app/gastos/helpers/dateHelpers";
 
+import { fechaEnCiclo } from "../helpers/ciclo";
+
 function soloDigitos(valor) {
   return valor.replace(/[^\d]/g, "");
 }
 
-export default function CompraModal({ inicial, onGuardar, onClose, guardando }) {
+export default function CompraModal({
+  inicial,
+  cicloKey,
+  diaCierre,
+  diaVencimiento,
+  rangoLabel,
+  onGuardar,
+  onClose,
+  guardando,
+}) {
   const [fechaISO, setFechaISO] = useState(() =>
     inicial ? isoDeFecha(inicial.fecha) : hoyISO(),
   );
@@ -39,9 +50,16 @@ export default function CompraModal({ inicial, onGuardar, onClose, guardando }) 
       return setError("Las cuotas deben ser un entero mayor o igual a 1.");
     }
 
+    const fecha = fechaLocal(fechaISO);
+    if (!fechaEnCiclo(fecha, cicloKey, diaCierre, diaVencimiento)) {
+      return setError(
+        `La fecha debe caer dentro del ciclo${rangoLabel ? ` (${rangoLabel})` : ""}.`,
+      );
+    }
+
     try {
       await onGuardar({
-        fecha: fechaLocal(fechaISO),
+        fecha,
         detalle: detalle.trim(),
         monto: montoNum,
         moneda,

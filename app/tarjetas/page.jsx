@@ -139,13 +139,17 @@ export default function TarjetasPage() {
 
             {t.estado === "sin_verificar" && (
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setModal({ tipo: "compra", compra: null })}
-                  className="flex-1 cursor-pointer rounded-[14px] bg-gradient-to-br from-[#9d7bff] to-[#5b35d5] px-3 py-[11px] text-[13px] font-bold text-white shadow-[0_8px_28px_rgba(138,100,255,0.38)] transition-all hover:scale-[1.01]"
-                >
-                  Cargar compra
-                </button>
+                {/* Cargar compra: solo en el ciclo ACTUAL. En un ciclo vencido
+                    no pagado solo se permite cerrar la factura. */}
+                {t.cicloKey === t.cicloActual && (
+                  <button
+                    type="button"
+                    onClick={() => setModal({ tipo: "compra", compra: null })}
+                    className="flex-1 cursor-pointer rounded-[14px] bg-gradient-to-br from-[#9d7bff] to-[#5b35d5] px-3 py-[11px] text-[13px] font-bold text-white shadow-[0_8px_28px_rgba(138,100,255,0.38)] transition-all hover:scale-[1.01]"
+                  >
+                    Cargar compra
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setModal({ tipo: "cerrar" })}
@@ -163,16 +167,6 @@ export default function TarjetasPage() {
                 className="w-full cursor-pointer rounded-[14px] bg-gradient-to-br from-[#9d7bff] to-[#5b35d5] px-3 py-[11px] text-[13px] font-bold text-white shadow-[0_8px_28px_rgba(138,100,255,0.38)] transition-all hover:scale-[1.01]"
               >
                 Pagar resumen
-              </button>
-            )}
-
-            {t.estado === "pagada" && t.cicloKey !== t.cicloActual && (
-              <button
-                type="button"
-                onClick={() => t.seleccionarCiclo(mesDeCiclo(t.cicloActual))}
-                className="w-full cursor-pointer rounded-[14px] border border-border bg-white/4 px-3 py-[11px] text-[13px] font-semibold text-text-muted transition-all hover:bg-white/8 hover:text-text"
-              >
-                Ir al ciclo actual
               </button>
             )}
 
@@ -199,6 +193,10 @@ export default function TarjetasPage() {
       {modal?.tipo === "compra" && (
         <CompraModal
           inicial={modal.compra}
+          cicloKey={t.cicloKey}
+          diaCierre={t.diaCierre}
+          diaVencimiento={t.diaVencimiento}
+          rangoLabel={t.rangoLabel}
           guardando={t.guardando}
           onClose={() => setModal(null)}
           onGuardar={guardarCompra}

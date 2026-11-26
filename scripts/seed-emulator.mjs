@@ -30,6 +30,7 @@ import {
   query,
   where,
   Timestamp,
+  updateDoc,
 } from "firebase/firestore";
 
 import { submitReintegro } from
@@ -38,6 +39,7 @@ import { submitDevolucion } from
   "../app/agregar/components/reintegros/helpers/submitDevolucion.js";
 import { condonar } from
   "../app/agregar/components/reintegros/helpers/condonar.js";
+import { resumenCiclo } from "../app/tarjetas/helpers/resumen.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -206,16 +208,25 @@ try {
   const dbCon = testEnv.authenticatedContext(contraparte.uid).firestore();
 
   // users: cada usuario escribe el SUYO (regla: uid == userId).
-  await setDoc(doc(dbReg, "users", registrador.uid), {
-    uid: registrador.uid,
-    displayName: registrador.displayName,
-    email: registrador.email,
-  });
-  await setDoc(doc(dbCon, "users", contraparte.uid), {
-    uid: contraparte.uid,
-    displayName: contraparte.displayName,
-    email: contraparte.email,
-  });
+  // merge: preserva otros campos (p. ej. balances); la tarjeta se resiembra abajo.
+  await setDoc(
+    doc(dbReg, "users", registrador.uid),
+    {
+      uid: registrador.uid,
+      displayName: registrador.displayName,
+      email: registrador.email,
+    },
+    { merge: true },
+  );
+  await setDoc(
+    doc(dbCon, "users", contraparte.uid),
+    {
+      uid: contraparte.uid,
+      displayName: contraparte.displayName,
+      email: contraparte.email,
+    },
+    { merge: true },
+  );
 
   // Grupo de 2 miembros: habilita el selector de contraparte por miembro.
   const GRUPO_ID = "grupo-prueba-42";
@@ -229,6 +240,107 @@ try {
   const userConOk = await getDoc(doc(dbReg, "users", contraparte.uid));
   if (!grupoOk.exists() || !userConOk.exists()) {
     abort("la verificación de lectura falló (grupo o users/contraparte).");
+  }
+
+  // ─── 5.1) Tarjeta de prueba limpia (6.2) ─────────────────────────────
+  // `updateDoc` REEMPLAZA el campo `tarjetas` (no deep-mergea): limpia la
+  // tarjeta anterior y deja el fixture pedido. Preserva el resto del doc.
+  const TARJETA_ID = "oca";
+  const fechaCompra = (anio, mes1, dia) =>
+    Timestamp.fromDate(new Date(anio, mes1 - 1, dia));
+
+  const tarjetaLimpia = {
+    nombre: "OCA",
+    diaCierre: 18,
+    diaVencimiento: 30,
+    activa: true,
+    retiradaDesde: null,
+    compras: [
+      {
+        id: "seed-compra-vieja",
+        fecha: fechaCompra(2026, 11, 10),
+        detalle: "Compra vieja",
+        monto: 2000,
+        moneda: "UYU",
+        cuotasTotal: 2,
+        tipo: "personal",
+        gastoVinculadoId: null,
+        createdAt: fechaCompra(2026, 11, 10),
+      },
+      {
+        id: "seed-compra-a",
+        fecha: fechaCompra(2026, 11, 20),
+        detalle: "Compra A",
+        monto: 2000,
+        moneda: "UYU",
+        cuotasTotal: 2,
+        tipo: "personal",
+        gastoVinculadoId: null,
+        createdAt: fechaCompra(2026, 11, 20),
+      },
+      {
+        id: "seed-compra-b",
+        fecha: fechaCompra(2026, 11, 21),
+        detalle: "Compra B",
+        monto: 4000,
+        moneda: "UYU",
+        cuotasTotal: 2,
+        tipo: "personal",
+        gastoVinculadoId: null,
+        createdAt: fechaCompra(2026, 11, 21),
+      },
+      {
+        id: "seed-compra-c",
+        fecha: fechaCompra(2026, 11, 22),
+        detalle: "Compra C",
+        monto: 2000,
+        moneda: "UYU",
+        cuotasTotal: 1,
+        tipo: "personal",
+        gastoVinculadoId: null,
+        createdAt: fechaCompra(2026, 11, 22),
+      },
+      {
+        id: "seed-compra-usd",
+        fecha: fechaCompra(2026, 11, 23),
+        detalle: "Compra USD",
+        monto: 200,
+        moneda: "USD",
+        cuotasTotal: 2,
+        tipo: "personal",
+        gastoVinculadoId: null,
+        createdAt: fechaCompra(2026, 11, 23),
+      },
+    ],
+    pagos: {},
+    ciclos: {},
+    apertura: [],
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  };
+
+  await updateDoc(doc(dbReg, "users", registrador.uid), {
+    tarjetas: { [TARJETA_ID]: tarjetaLimpia },
+  });
+
+  console.log(
+    `[seed] tarjeta oca sembrada en ${registrador.email} (uid ${registrador.uid})`,
+  );
+  console.log("[seed] ciclo 2026-12: sin_verificar (default)");
+
+  // Verificación de los números esperados con el MISMO núcleo puro de la app.
+  for (const ciclo of ["2026-12", "2026-11"]) {
+    const r = resumenCiclo({
+      compras: tarjetaLimpia.compras,
+      apertura: tarjetaLimpia.apertura,
+      cicloKey: ciclo,
+      diaCierre: 18,
+      diaVencimiento: 30,
+    });
+    console.log(
+      `[seed] ${ciclo}: a pagar ${r.total.UYU} UYU + US$ ${r.total.USD} · ` +
+        `deuda total ${r.deudaTotal.UYU} UYU + US$ ${r.deudaTotal.USD}`,
+    );
   }
 
   // ─── 6) Fixture 4.3-bis — 4 obligaciones de Reintegros ────────────────

@@ -266,6 +266,7 @@ export default function useTarjetas() {
     esCompraEditable: (compra) =>
       esCompraEditable(compra, {
         cicloKey: cicloSel,
+        cicloActual,
         estado: estadoDelCiclo,
         diaCierre,
         diaVencimiento,

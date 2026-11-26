@@ -14,8 +14,10 @@ import { estadoCiclo } from "./estados.js";
 
 export function esCompraEditable(
   compra,
-  { cicloKey, estado, diaCierre, diaVencimiento } = {},
+  { cicloKey, cicloActual, estado, diaCierre, diaVencimiento } = {},
 ) {
+  // Solo el ciclo ACTUAL (el que contiene hoy) y mientras esté sin verificar.
+  if (!cicloActual || cicloKey !== cicloActual) return false;
   if (estado !== "sin_verificar") return false;
 
   const cuota = cuotaEnCiclo(compra, cicloKey, diaCierre, diaVencimiento);
