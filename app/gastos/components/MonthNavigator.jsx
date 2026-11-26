@@ -25,11 +25,18 @@ export default function MonthSelectorModal({
   const currentYear =
     now.getFullYear();
 
+  // Tope de año: sale de maxMonth (si se pasa). En /tarjetas el ciclo actual
+  // puede caer en el año siguiente (p. ej. "2027-01" un 19/12). Sin maxMonth,
+  // o con maxMonth del año actual, el tope sigue siendo el año actual.
+  const maxYear = maxMonth
+    ? maxMonth.getFullYear()
+    : currentYear;
+
   const year = yearNavigation
     ? viewYear
     : currentYear;
 
-  const minYear = currentYear - 10;
+  const minYear = maxYear - 10;
 
   const months = [
     "Enero",
@@ -137,10 +144,10 @@ export default function MonthSelectorModal({
             <button
               type="button"
               aria-label="Año siguiente"
-              disabled={year >= currentYear}
+              disabled={year >= maxYear}
               onClick={() =>
                 setViewYear((actual) =>
-                  Math.min(currentYear, actual + 1),
+                  Math.min(maxYear, actual + 1),
                 )
               }
               className="cursor-pointer rounded-[8px] px-2 py-1 text-[18px] text-text disabled:cursor-not-allowed disabled:opacity-30"
