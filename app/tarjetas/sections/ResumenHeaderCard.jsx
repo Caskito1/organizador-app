@@ -1,6 +1,7 @@
 // tarjetas/sections/ResumenHeaderCard.jsx
-// Hero del ciclo (6.2, §12.4): Total del resumen grande + chip de estado a la
-// derecha + vencimiento y rango. Bimoneda: el total grande es UYU y el USD va aparte.
+// Hero del ciclo (6.2, §12.4): Total del resumen grande arriba; debajo la fecha
+// y el rango; el chip de estado, a la IZQUIERDA y debajo de la fecha/rango.
+// Bimoneda: el total grande es UYU y el USD va aparte.
 
 "use client";
 
@@ -32,27 +33,17 @@ export default function ResumenHeaderCard({
 
   return (
     <GlassCard>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-[0.5px] text-text-muted">
-            Total del resumen
-          </p>
-          <p className="mt-1 font-sora text-[32px] font-bold leading-none text-text">
-            {formatearMonto(resumen.total.UYU)}
-          </p>
-          {resumen.total.USD > 0 && (
-            <p className="mt-1 font-sora text-[14px] font-semibold text-[var(--user-b)]">
-              {formatearUSD(resumen.total.USD)}
-            </p>
-          )}
-        </div>
-
-        <span
-          className={`shrink-0 rounded-[999px] border px-3 py-[4px] text-[10px] font-semibold ${chip.clase}`}
-        >
-          {chip.label}
-        </span>
-      </div>
+      <p className="text-[11px] uppercase tracking-[0.5px] text-text-muted">
+        Total del resumen
+      </p>
+      <p className="mt-1 font-sora text-[32px] font-bold leading-none text-text">
+        {formatearMonto(resumen.total.UYU)}
+      </p>
+      {resumen.total.USD > 0 && (
+        <p className="mt-1 font-sora text-[14px] font-semibold text-[var(--user-b)]">
+          {formatearUSD(resumen.total.USD)}
+        </p>
+      )}
 
       <p className="mt-3 text-[12px] text-text-muted">
         Resumen · {vencimientoLabel}
@@ -60,6 +51,14 @@ export default function ResumenHeaderCard({
       <p className="mt-[2px] text-[11px] text-text-muted">
         Compras del {rangoLabel}
       </p>
+
+      <div className="mt-3">
+        <span
+          className={`inline-flex rounded-[999px] border px-3 py-[4px] text-[10px] font-semibold ${chip.clase}`}
+        >
+          {chip.label}
+        </span>
+      </div>
     </GlassCard>
   );
 }

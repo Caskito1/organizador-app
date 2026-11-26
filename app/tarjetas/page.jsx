@@ -18,7 +18,6 @@ import MenuAccionesSheet from "./components/MenuAccionesSheet";
 import PagoModal from "./components/PagoModal";
 import ComprasCicloCard from "./sections/ComprasCicloCard";
 import ResumenHeaderCard from "./sections/ResumenHeaderCard";
-import ResumenPieCard from "./sections/ResumenPieCard";
 import TarjetasHeader from "./sections/TarjetasHeader";
 import { mesDeCiclo } from "./helpers/fechas";
 import useTarjetas from "./hooks/useTarjetas";
@@ -172,11 +171,10 @@ export default function TarjetasPage() {
 
             <ComprasCicloCard
               comprasCiclo={t.comprasCiclo}
+              resumen={t.resumen}
               esEditable={t.esCompraEditable}
               onMenu={abrirMenuCompra}
             />
-
-            <ResumenPieCard resumen={t.resumen} />
           </div>
         )}
       </div>
