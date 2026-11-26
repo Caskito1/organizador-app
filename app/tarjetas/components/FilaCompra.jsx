@@ -1,8 +1,8 @@
 // tarjetas/components/FilaCompra.jsx
-// Fila de una compra del ciclo (6.2, §12.6):
-//   izquierda: detalle + fecha
-//   derecha (apilado): cuota · precio de la CUOTA · tag de tipo (más chico)
-// El ⋮ solo se muestra cuando la compra es editable (6.2 lo decide).
+// Fila de una compra del ciclo (6.2):
+//   izquierda: detalle · fecha · tag de tipo (Personal / Reintegro)
+//   derecha: cuota (n/total) · precio de la CUOTA (+ ⋮ si editable)
+// El precio de la fila es el MONTO DE LA CUOTA, no el total de la compra.
 
 "use client";
 
@@ -12,7 +12,6 @@ import { etiquetaCuota } from "../helpers/cuota";
 import BotonOpciones from "./BotonOpciones";
 
 export default function FilaCompra({ compra, cuota, editable, onMenu }) {
-  // El precio de la fila es el MONTO DE LA CUOTA, no el total de la compra.
   const precio =
     compra.moneda === "USD"
       ? formatearUSD(cuota.monto)
@@ -27,6 +26,9 @@ export default function FilaCompra({ compra, cuota, editable, onMenu }) {
         <p className="mt-[1px] text-[10px] text-text-muted">
           {formatearFecha(compra.fecha)}
         </p>
+        <span className="mt-[2px] inline-block rounded-[4px] border border-border bg-white/4 px-[4px] text-[9px] text-text-muted">
+          {compra.tipo === "reintegro" ? "Reintegro" : "Personal"}
+        </span>
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-2">
@@ -36,9 +38,6 @@ export default function FilaCompra({ compra, cuota, editable, onMenu }) {
           </span>
           <span className="font-sora text-[13px] font-semibold text-text">
             {precio}
-          </span>
-          <span className="rounded-[4px] border border-border bg-white/4 px-[4px] text-[9px] text-text-muted">
-            {compra.tipo === "reintegro" ? "Reintegro" : "Personal"}
           </span>
         </div>
 
