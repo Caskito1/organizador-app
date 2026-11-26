@@ -55,9 +55,9 @@ export default function ResumenPieCard({ resumen }) {
         <Fila etiqueta="Reintegros" valor={resumen.reintegros} />
         <Fila etiqueta="Total" valor={resumen.total} fuerte />
         <Fila
-          etiqueta="Deuda · cuotas por vencer"
-          valor={resumen.deudaPorVencer}
-          detalle={`${resumen.cuotasPorVencer} cuota(s)`}
+          etiqueta="Deuda total"
+          valor={resumen.deudaTotal}
+          detalle={`incluye este resumen · ${resumen.cuotasTotales} cuota(s)`}
         />
       </div>
     </GlassCard>

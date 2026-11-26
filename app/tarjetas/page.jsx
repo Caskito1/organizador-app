@@ -10,14 +10,12 @@ import Appshell from "@/app/components/layout/Appshell";
 import GlassCard from "@/app/components/layout/GlassCard";
 import MonthNavigator from "@/app/gastos/components/MonthNavigator";
 
-import AperturaModal from "./components/AperturaModal";
 import CerrarFacturaModal from "./components/CerrarFacturaModal";
 import CompraModal from "./components/CompraModal";
 import ConfigTarjetaCard from "./components/ConfigTarjetaCard";
 import ConfirmarAccionModal from "./components/ConfirmarAccionModal";
 import MenuAccionesSheet from "./components/MenuAccionesSheet";
 import PagoModal from "./components/PagoModal";
-import AperturaSection from "./sections/AperturaSection";
 import ComprasCicloCard from "./sections/ComprasCicloCard";
 import ResumenHeaderCard from "./sections/ResumenHeaderCard";
 import ResumenPieCard from "./sections/ResumenPieCard";
@@ -64,32 +62,6 @@ export default function TarjetasPage() {
     });
   }
 
-  function abrirMenuApertura(plan) {
-    setMenu({
-      titulo: plan.descripcion,
-      subtitulo: `${plan.moneda} · ${plan.cuotasTotal} cuota(s)`,
-      items: [
-        {
-          id: "editar",
-          label: "Editar",
-          onSelect: () => setModal({ tipo: "apertura", plan }),
-        },
-        {
-          id: "eliminar",
-          label: "Eliminar",
-          danger: true,
-          onSelect: () =>
-            setConfirmar({
-              tipo: "apertura",
-              id: plan.id,
-              titulo: "Eliminar plan",
-              descripcion: `Se quitará el plan «${plan.descripcion}».`,
-            }),
-        },
-      ],
-    });
-  }
-
   async function guardarCompra(compra) {
     if (modal?.compra) {
       await t.acciones.actualizarCompra(modal.compra.id, compra);
@@ -98,20 +70,9 @@ export default function TarjetasPage() {
     }
   }
 
-  async function guardarApertura(plan) {
-    if (modal?.plan) {
-      await t.acciones.actualizarApertura(modal.plan.id, plan);
-    } else {
-      await t.acciones.crearApertura(plan);
-    }
-  }
-
   async function ejecutarConfirmacion() {
     if (confirmar?.tipo === "compra") {
       return t.acciones.borrarCompra(confirmar.id);
-    }
-    if (confirmar?.tipo === "apertura") {
-      return t.acciones.borrarApertura(confirmar.id);
     }
   }
 
@@ -205,13 +166,13 @@ export default function TarjetasPage() {
               </button>
             )}
 
-            {t.estado === "pagada" && (
+            {t.estado === "pagada" && t.cicloKey !== t.cicloActual && (
               <button
                 type="button"
                 onClick={() => t.seleccionarCiclo(mesDeCiclo(t.cicloActual))}
                 className="w-full cursor-pointer rounded-[14px] border border-border bg-white/4 px-3 py-[11px] text-[13px] font-semibold text-text-muted transition-all hover:bg-white/8 hover:text-text"
               >
-                Ver ciclo actual
+                Ir al ciclo actual
               </button>
             )}
 
@@ -222,13 +183,6 @@ export default function TarjetasPage() {
             />
 
             <ResumenPieCard resumen={t.resumen} />
-
-            <AperturaSection
-              apertura={t.apertura}
-              esEditable={t.esAperturaEditable}
-              onMenu={abrirMenuApertura}
-              onAgregar={() => setModal({ tipo: "apertura", plan: null })}
-            />
           </div>
         )}
       </div>
@@ -266,16 +220,6 @@ export default function TarjetasPage() {
           guardando={t.guardando}
           onClose={() => setModal(null)}
           onConfirmar={t.acciones.cerrarFactura}
-        />
-      )}
-
-      {modal?.tipo === "apertura" && (
-        <AperturaModal
-          inicial={modal.plan}
-          cicloActual={t.cicloActual}
-          guardando={t.guardando}
-          onClose={() => setModal(null)}
-          onGuardar={guardarApertura}
         />
       )}
 

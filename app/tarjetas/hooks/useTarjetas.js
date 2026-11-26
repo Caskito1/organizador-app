@@ -9,23 +9,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/lib/AuthContext";
 import { db } from "@/lib/firebase";
-import { aDate } from "@/app/gastos/helpers/dateHelpers";
 
-import { cuotaAperturaEnCiclo } from "../helpers/apertura";
 import { cicloDeFecha } from "../helpers/ciclo";
-import { cuotaEnCiclo } from "../helpers/cuota";
-import { esAperturaEditable, esCompraEditable } from "../helpers/edicion";
+import { esCompraEditable } from "../helpers/edicion";
 import { estadoCiclo } from "../helpers/estados";
 import { pagoCubreCiclo } from "../helpers/pagos";
 import { claveDeMes, rotuloRango, rotuloVencimiento } from "../helpers/fechas";
 import { TarjetasError } from "../helpers/persistencia";
-import { resumenCiclo } from "../helpers/resumen";
+import { comprasDelCiclo, resumenCiclo } from "../helpers/resumen";
 import {
-  agregarApertura,
   agregarCompra,
-  eliminarApertura,
   eliminarCompra,
-  editarApertura,
   editarCompra,
   guardarEstadoCiclo,
   guardarPago,
@@ -146,27 +140,13 @@ export default function useTarjetas() {
 
   const comprasCiclo = useMemo(
     () =>
-      (tarjeta?.compras ?? [])
-        .map((compra) => ({
-          compra,
-          cuota: cuotaEnCiclo(compra, cicloSel, diaCierre, diaVencimiento),
-        }))
-        .filter((item) => item.cuota)
-        .sort(
-          (a, b) =>
-            (aDate(a.compra.fecha)?.getTime() ?? 0) -
-            (aDate(b.compra.fecha)?.getTime() ?? 0),
-        ),
+      comprasDelCiclo({
+        compras: tarjeta?.compras ?? [],
+        cicloKey: cicloSel,
+        diaCierre,
+        diaVencimiento,
+      }),
     [tarjeta, cicloSel, diaCierre, diaVencimiento],
-  );
-
-  const apertura = useMemo(
-    () =>
-      (tarjeta?.apertura ?? []).map((plan) => ({
-        plan,
-        cuota: cuotaAperturaEnCiclo(plan, cicloSel),
-      })),
-    [tarjeta, cicloSel],
   );
 
   async function ejecutar(accion) {
@@ -260,27 +240,6 @@ export default function useTarjetas() {
     return resultado;
   }
 
-  async function crearApertura(plan) {
-    await ejecutar(() =>
-      agregarApertura({ db, uid, tarjetaId: TARJETA_ID, plan }),
-    );
-    await cargar({ silencioso: true });
-  }
-
-  async function actualizarApertura(planId, cambios) {
-    await ejecutar(() =>
-      editarApertura({ db, uid, tarjetaId: TARJETA_ID, planId, cambios }),
-    );
-    await cargar({ silencioso: true });
-  }
-
-  async function borrarApertura(planId) {
-    await ejecutar(() =>
-      eliminarApertura({ db, uid, tarjetaId: TARJETA_ID, planId }),
-    );
-    await cargar({ silencioso: true });
-  }
-
   function seleccionarCiclo(fecha) {
     setCicloKey(claveDeMes(fecha));
   }
@@ -298,7 +257,6 @@ export default function useTarjetas() {
     estado: estadoDelCiclo,
     resumen,
     comprasCiclo,
-    apertura,
     ciclos: tarjeta?.ciclos ?? {},
     pagosCiclo: tarjeta?.pagos?.[cicloSel] ?? {},
     diaCierre,
@@ -312,8 +270,6 @@ export default function useTarjetas() {
         diaCierre,
         diaVencimiento,
       }),
-    esAperturaEditable: (plan) =>
-      esAperturaEditable(plan, { ciclos: tarjeta?.ciclos ?? {} }),
     acciones: {
       guardarConfig,
       crearCompra,
@@ -321,9 +277,6 @@ export default function useTarjetas() {
       borrarCompra,
       cerrarFactura,
       pagarResumen,
-      crearApertura,
-      actualizarApertura,
-      borrarApertura,
     },
   };
 }
