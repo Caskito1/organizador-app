@@ -114,18 +114,20 @@ test("HT03 — upsert actualiza config sin borrar compras/pagos", async () => {
     db: dbAs(A),
     uid: A,
     tarjetaId: "oca",
+    ahora: fecha(2026, 10, 15),
     compra: { fecha: fecha(2026, 10, 10), detalle: "Heladera", monto: 108000, moneda: "UYU", cuotasTotal: 6 },
   });
   await guardarPago({
     db: dbAs(A),
     uid: A,
     tarjetaId: "oca",
+    ahora: fecha(2026, 10, 15),
     cicloKey: "2026-12",
     moneda: "UYU",
     pago: { monto: 86000, fecha: fecha(2026, 12, 30) },
   });
 
-  await guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", config: { ...OCA, nombre: "OCA Visa" } });
+  await guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", ahora: fecha(2026, 10, 15), config: { ...OCA, nombre: "OCA Visa" } });
 
   const data = await leerDoc();
   assert.equal(data.tarjetas.oca.nombre, "OCA Visa");
@@ -266,14 +268,15 @@ test("HT10 — apertura: alta, edición y baja por id", async () => {
     db: dbAs(A),
     uid: A,
     tarjetaId: "oca",
+    ahora: fecha(2026, 10, 15),
     plan: { descripcion: "opencodeGo", moneda: "UYU", montoCuota: 5000, cuotasTotal: 12, desdeCiclo: "2026-10" },
   });
 
-  await editarApertura({ db: dbAs(A), uid: A, tarjetaId: "oca", planId, cambios: { montoCuota: 6000 } });
+  await editarApertura({ db: dbAs(A), uid: A, tarjetaId: "oca", planId, ahora: fecha(2026, 10, 15), cambios: { montoCuota: 6000 } });
   let r = await leerTarjetas({ db: dbAs(A), uid: A });
   assert.equal(r.tarjetas.oca.apertura[0].montoCuota, 6000);
 
-  await eliminarApertura({ db: dbAs(A), uid: A, tarjetaId: "oca", planId });
+  await eliminarApertura({ db: dbAs(A), uid: A, tarjetaId: "oca", planId, ahora: fecha(2026, 10, 15) });
   r = await leerTarjetas({ db: dbAs(A), uid: A });
   assert.deepEqual(r.tarjetas.oca.apertura, []);
 });
@@ -332,9 +335,9 @@ test("HT14 — bimoneda: compras y pagos UYU/USD conviven", async () => {
 test("HT15 — lectura + modelo puro reproducen §8.1", async () => {
   await guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", config: OCA });
 
-  await agregarCompra({ db: dbAs(A), uid: A, tarjetaId: "oca", compra: { fecha: fecha(2026, 10, 5), detalle: "Zapatillas", monto: 12000, moneda: "UYU", cuotasTotal: 1 } });
-  await agregarCompra({ db: dbAs(A), uid: A, tarjetaId: "oca", compra: { fecha: fecha(2026, 10, 10), detalle: "Heladera", monto: 108000, moneda: "UYU", cuotasTotal: 6 } });
-  await agregarCompra({ db: dbAs(A), uid: A, tarjetaId: "oca", compra: { fecha: fecha(2026, 10, 12), detalle: "Pasajes", monto: 56000, moneda: "UYU", cuotasTotal: 1, tipo: "reintegro" } });
+  await agregarCompra({ db: dbAs(A), uid: A, tarjetaId: "oca", ahora: fecha(2026, 10, 15), compra: { fecha: fecha(2026, 10, 5), detalle: "Zapatillas", monto: 12000, moneda: "UYU", cuotasTotal: 1 } });
+  await agregarCompra({ db: dbAs(A), uid: A, tarjetaId: "oca", ahora: fecha(2026, 10, 15), compra: { fecha: fecha(2026, 10, 10), detalle: "Heladera", monto: 108000, moneda: "UYU", cuotasTotal: 6 } });
+  await agregarCompra({ db: dbAs(A), uid: A, tarjetaId: "oca", ahora: fecha(2026, 10, 15), compra: { fecha: fecha(2026, 10, 12), detalle: "Pasajes", monto: 56000, moneda: "UYU", cuotasTotal: 1, tipo: "reintegro" } });
 
   const r = await leerTarjetas({ db: dbAs(A), uid: A });
   const desglose = desgloseCiclo({
@@ -361,4 +364,287 @@ test("HT16 — eliminarTarjeta la borra del mapa (y conserva las demás)", async
   const data = await leerDoc();
   assert.equal(data.tarjetas.oca, undefined);
   assert.equal(data.tarjetas.visa.nombre, "Visa");
+});
+
+// ── 6.2-bis — factura pendiente ───────────────────────────────────────────
+
+test("HTB1 — pendiente bloquea compras, config, pagos posteriores y borrado", async () => {
+  await guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", config: OCA });
+  await agregarCompra({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    ahora: fecha(2026, 10, 15),
+    compra: { fecha: fecha(2026, 10, 10), detalle: "Pendiente", monto: 10000, moneda: "UYU" },
+  });
+  await guardarEstadoCiclo({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    ahora: fecha(2026, 10, 15),
+    cicloKey: "2026-10",
+    estado: "por_pagar",
+  });
+
+  // Ahora (diciembre): 2026-10 es pendiente.
+  await rechaza(
+    agregarCompra({
+      db: dbAs(A),
+      uid: A,
+      tarjetaId: "oca",
+      compra: { fecha: fecha(2026, 12, 10), detalle: "Bloqueada", monto: 5000, moneda: "UYU" },
+    }),
+    "CICLO_BLOQUEADO",
+  );
+  await rechaza(
+    guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", config: { ...OCA, nombre: "Otra" } }),
+    "CICLO_BLOQUEADO",
+  );
+  await rechaza(
+    guardarPago({
+      db: dbAs(A),
+      uid: A,
+      tarjetaId: "oca",
+      cicloKey: "2026-11",
+      moneda: "UYU",
+      pago: { monto: 1000, fecha: fecha(2026, 11, 30) },
+    }),
+    "CICLO_BLOQUEADO",
+  );
+  await rechaza(
+    guardarPago({
+      db: dbAs(A),
+      uid: A,
+      tarjetaId: "oca",
+      cicloKey: "2026-12",
+      moneda: "UYU",
+      pago: { monto: 1000, fecha: fecha(2026, 12, 30) },
+    }),
+    "CICLO_BLOQUEADO",
+  );
+  await rechaza(
+    eliminarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca" }),
+    "CICLO_BLOQUEADO",
+  );
+
+  const r = await leerTarjetas({ db: dbAs(A), uid: A });
+  assert.equal(r.tarjetas.oca.compras.length, 1);
+  assert.equal(r.tarjetas.oca.nombre, "OCA");
+  assert.deepEqual(r.tarjetas.oca.pagos, {});
+});
+
+test("HTB2 — pagar el pendiente desbloquea los ciclos posteriores", async () => {
+  await guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", config: OCA });
+  await agregarCompra({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    ahora: fecha(2026, 10, 15),
+    compra: { fecha: fecha(2026, 10, 10), detalle: "Octubre", monto: 10000, moneda: "UYU" },
+  });
+  await guardarEstadoCiclo({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    ahora: fecha(2026, 10, 15),
+    cicloKey: "2026-10",
+    estado: "por_pagar",
+  });
+
+  await guardarPago({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    cicloKey: "2026-10",
+    moneda: "UYU",
+    pago: { monto: 10000, fecha: fecha(2026, 10, 30) },
+  });
+  await guardarEstadoCiclo({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    cicloKey: "2026-10",
+    estado: "pagada",
+  });
+
+  await agregarCompra({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    compra: { fecha: fecha(2026, 12, 10), detalle: "Diciembre", monto: 3000, moneda: "UYU" },
+  });
+
+  const r = await leerTarjetas({ db: dbAs(A), uid: A });
+  assert.equal(r.tarjetas.oca.compras.length, 2);
+  assert.equal(r.tarjetas.oca.ciclos["2026-10"].estado, "pagada");
+});
+
+test("HTB3 — un pendiente sin_verificar se puede cerrar y luego pagar", async () => {
+  await guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", config: OCA });
+  await agregarCompra({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    ahora: fecha(2026, 10, 15),
+    compra: { fecha: fecha(2026, 10, 10), detalle: "Sin cerrar", monto: 7000, moneda: "UYU" },
+  });
+
+  // Con el ciclo actual en diciembre, 2026-10 queda pendiente sin verificar.
+  await guardarEstadoCiclo({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    cicloKey: "2026-10",
+    estado: "por_pagar",
+  });
+
+  let r = await leerTarjetas({ db: dbAs(A), uid: A });
+  assert.equal(r.tarjetas.oca.ciclos["2026-10"].estado, "por_pagar");
+
+  await guardarPago({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    cicloKey: "2026-10",
+    moneda: "UYU",
+    pago: { monto: 7000, fecha: fecha(2026, 10, 30) },
+  });
+  await guardarEstadoCiclo({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    cicloKey: "2026-10",
+    estado: "pagada",
+  });
+
+  r = await leerTarjetas({ db: dbAs(A), uid: A });
+  assert.equal(r.tarjetas.oca.ciclos["2026-10"].estado, "pagada");
+});
+
+test("HTB4 — un ciclo pasado SIN datos no bloquea (no es pendiente)", async () => {
+  await guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", config: OCA });
+  await guardarEstadoCiclo({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    cicloKey: "2026-09",
+    estado: "por_pagar",
+  });
+
+  await agregarCompra({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    compra: { fecha: fecha(2026, 12, 10), detalle: "Actual", monto: 3000, moneda: "UYU" },
+  });
+
+  const r = await leerTarjetas({ db: dbAs(A), uid: A });
+  assert.equal(r.tarjetas.oca.compras.length, 1);
+});
+
+test("HTB5 — dos pendientes: se resuelven del más viejo al más nuevo", async () => {
+  await guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", config: OCA });
+  await agregarCompra({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    ahora: fecha(2026, 10, 15),
+    compra: { fecha: fecha(2026, 10, 10), detalle: "Octubre", monto: 10000, moneda: "UYU" },
+  });
+  await agregarCompra({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    ahora: fecha(2026, 10, 15),
+    compra: { fecha: fecha(2026, 11, 10), detalle: "Noviembre", monto: 20000, moneda: "UYU" },
+  });
+
+  // Con diciembre como actual hay dos pendientes (oct y nov).
+  await rechaza(
+    guardarPago({
+      db: dbAs(A),
+      uid: A,
+      tarjetaId: "oca",
+      cicloKey: "2026-11",
+      moneda: "UYU",
+      pago: { monto: 20000, fecha: fecha(2026, 11, 30) },
+    }),
+    "CICLO_BLOQUEADO",
+  );
+
+  await guardarPago({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    cicloKey: "2026-10",
+    moneda: "UYU",
+    pago: { monto: 10000, fecha: fecha(2026, 10, 30) },
+  });
+  await guardarEstadoCiclo({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    cicloKey: "2026-10",
+    estado: "pagada",
+  });
+
+  // Noviembre pasa a ser el pendiente: se puede pagar.
+  await guardarPago({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    cicloKey: "2026-11",
+    moneda: "UYU",
+    pago: { monto: 20000, fecha: fecha(2026, 11, 30) },
+  });
+  await guardarEstadoCiclo({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    cicloKey: "2026-11",
+    estado: "pagada",
+  });
+
+  await agregarCompra({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    compra: { fecha: fecha(2026, 12, 10), detalle: "Diciembre", monto: 3000, moneda: "UYU" },
+  });
+
+  const r = await leerTarjetas({ db: dbAs(A), uid: A });
+  assert.equal(r.tarjetas.oca.compras.length, 3);
+});
+
+test("HTB6 — editar/eliminar una compra que toca ciclos posteriores se bloquea", async () => {
+  await guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", config: OCA });
+  const { compraId } = await agregarCompra({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    ahora: fecha(2026, 9, 15),
+    compra: { fecha: fecha(2026, 9, 10), detalle: "En cuotas", monto: 30000, moneda: "UYU", cuotasTotal: 3 },
+  });
+  await guardarEstadoCiclo({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    ahora: fecha(2026, 9, 15),
+    cicloKey: "2026-09",
+    estado: "pagada",
+  });
+
+  // Con diciembre como actual, 2026-10 es el pendiente y la compra toca 11.
+  await rechaza(
+    editarCompra({ db: dbAs(A), uid: A, tarjetaId: "oca", compraId, cambios: { monto: 20000 } }),
+    "CICLO_BLOQUEADO",
+  );
+  await rechaza(
+    eliminarCompra({ db: dbAs(A), uid: A, tarjetaId: "oca", compraId }),
+    "CICLO_BLOQUEADO",
+  );
+
+  const r = await leerTarjetas({ db: dbAs(A), uid: A });
+  assert.equal(r.tarjetas.oca.compras.length, 1);
+  assert.equal(r.tarjetas.oca.compras[0].monto, 30000);
 });

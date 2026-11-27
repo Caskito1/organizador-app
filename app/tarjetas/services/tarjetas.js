@@ -44,11 +44,66 @@ import {
   validarPago,
   validarTarjetaId,
 } from "../helpers/persistencia.js";
+import { etiquetaCiclo } from "../helpers/ciclo.js";
+import {
+  cicloActualDe,
+  cicloBloqueado,
+  cicloPendiente,
+  compraBloqueada,
+} from "../helpers/pendiente.js";
 
 const COLECCION = "users";
 
 function refUsuario(db, uid) {
   return doc(db, COLECCION, uid);
+}
+
+// ── 6.2-bis — guardia de factura pendiente ────────────────────────────────
+// El bloqueo vive ACÁ (y en el hook), no solo en los botones: una pestaña
+// vieja que llame al servicio con un ciclo posterior al pendiente recibe
+// CICLO_BLOQUEADO y no escribe nada.
+
+function contextoDe(tarjeta, ahora) {
+  return {
+    compras: tarjeta?.compras ?? [],
+    apertura: tarjeta?.apertura ?? [],
+    ciclos: tarjeta?.ciclos ?? {},
+    cicloActual: cicloActualDe(tarjeta, ahora),
+    diaCierre: tarjeta?.diaCierre,
+    diaVencimiento: tarjeta?.diaVencimiento,
+  };
+}
+
+function errorPendiente(pendiente) {
+  return new TarjetasError(
+    "CICLO_BLOQUEADO",
+    `Hay una factura pendiente (${etiquetaCiclo(pendiente) ?? pendiente}) sin cerrar o sin pagar. Resolvela antes de operar ciclos posteriores.`,
+  );
+}
+
+function guardiaDeCiclo(ctx, cicloKey) {
+  if (!ctx.tarjeta) return;
+
+  const contexto = contextoDe(ctx.tarjeta, ctx.ahora);
+  if (cicloBloqueado({ ...contexto, cicloKey })) {
+    throw errorPendiente(cicloPendiente(contexto));
+  }
+}
+
+function guardiaDeCompra(ctx, compra) {
+  if (!ctx.tarjeta || !compra) return;
+
+  const contexto = contextoDe(ctx.tarjeta, ctx.ahora);
+  if (compraBloqueada({ ...contexto, compra })) {
+    throw errorPendiente(cicloPendiente(contexto));
+  }
+}
+
+function guardiaSinPendiente(ctx) {
+  if (!ctx.tarjeta) return;
+
+  const pendiente = cicloPendiente(contextoDe(ctx.tarjeta, ctx.ahora));
+  if (pendiente) throw errorPendiente(pendiente);
 }
 
 // Lectura one-shot. Sin suscripción (6.2 decide si refresca al volver a la pestaña).
@@ -75,7 +130,7 @@ export async function leerTarjetas({ db, uid } = {}) {
 
 // read-modify-write atómico: exige que `users/{uid}` exista (PERFIL_FALTANTE),
 // aplica la transformación pura y REEMPLAZA el campo `tarjetas`.
-async function mutar({ db, uid, tarjetaId, aplicar }) {
+async function mutar({ db, uid, tarjetaId, aplicar, guardia, ahora = new Date() }) {
   if (!uid) {
     throw new TarjetasError("UID_REQUERIDO", "Falta el usuario.");
   }
@@ -94,6 +149,16 @@ async function mutar({ db, uid, tarjetaId, aplicar }) {
       }
 
       const actual = normalizarTarjetas(snap.data()?.tarjetas);
+
+      // 6.2-bis: guardia de factura pendiente ANTES de aplicar la escritura.
+      if (guardia) {
+        guardia({
+          tarjetas: actual,
+          tarjeta: tarjetaId ? actual[tarjetaId] : null,
+          ahora,
+        });
+      }
+
       const { tarjetas, resultado } = aplicar(actual);
 
       // Auditoría: updatedAt en la tarjeta afectada, si sigue existiendo.
@@ -117,7 +182,7 @@ async function mutar({ db, uid, tarjetaId, aplicar }) {
 
 // ── config ────────────────────────────────────────────────────────────────
 
-export async function guardarTarjeta({ db, uid, tarjetaId, config } = {}) {
+export async function guardarTarjeta({ db, uid, tarjetaId, config, ahora = new Date() } = {}) {
   const id = validarTarjetaId(tarjetaId);
   const cfg = validarConfig(config);
 
@@ -125,6 +190,8 @@ export async function guardarTarjeta({ db, uid, tarjetaId, config } = {}) {
     db,
     uid,
     tarjetaId: id,
+    ahora,
+    guardia: guardiaSinPendiente,
     aplicar: (actual) => {
       const r = conConfig(actual, id, cfg, { creadaEn: serverTimestamp() });
       return { tarjetas: r.tarjetas, resultado: r.tarjeta };
@@ -134,13 +201,15 @@ export async function guardarTarjeta({ db, uid, tarjetaId, config } = {}) {
   return { tarjetaId: id, tarjeta };
 }
 
-export async function eliminarTarjeta({ db, uid, tarjetaId } = {}) {
+export async function eliminarTarjeta({ db, uid, tarjetaId, ahora = new Date() } = {}) {
   const id = validarTarjetaId(tarjetaId);
 
   const tarjeta = await mutar({
     db,
     uid,
     tarjetaId: id,
+    ahora,
+    guardia: guardiaSinPendiente,
     aplicar: (actual) => {
       const r = sinTarjeta(actual, id);
       return { tarjetas: r.tarjetas, resultado: r.tarjeta };
@@ -152,7 +221,7 @@ export async function eliminarTarjeta({ db, uid, tarjetaId } = {}) {
 
 // ── compras ───────────────────────────────────────────────────────────────
 
-export async function agregarCompra({ db, uid, tarjetaId, compra } = {}) {
+export async function agregarCompra({ db, uid, tarjetaId, compra, ahora = new Date() } = {}) {
   const id = validarTarjetaId(tarjetaId);
   const validada = validarCompra(compra);
   const compraId = nuevoId();
@@ -165,6 +234,8 @@ export async function agregarCompra({ db, uid, tarjetaId, compra } = {}) {
     db,
     uid,
     tarjetaId: id,
+    ahora,
+    guardia: (ctx) => guardiaDeCompra(ctx, completa),
     aplicar: (actual) => {
       const r = conCompra(actual, id, completa);
       return { tarjetas: r.tarjetas, resultado: r.compra };
@@ -174,13 +245,21 @@ export async function agregarCompra({ db, uid, tarjetaId, compra } = {}) {
   return { compraId, compra: guardada };
 }
 
-export async function editarCompra({ db, uid, tarjetaId, compraId, cambios } = {}) {
+export async function editarCompra({ db, uid, tarjetaId, compraId, cambios, ahora = new Date() } = {}) {
   const id = validarTarjetaId(tarjetaId);
 
   const compra = await mutar({
     db,
     uid,
     tarjetaId: id,
+    ahora,
+    guardia: (ctx) => {
+      const actual = (ctx.tarjeta?.compras ?? []).find(
+        (item) => item.id === compraId,
+      );
+      if (!actual) return;
+      guardiaDeCompra(ctx, { ...actual, ...(cambios ?? {}) });
+    },
     aplicar: (actual) => {
       const r = conCompraEditada(actual, id, compraId, cambios);
       return { tarjetas: r.tarjetas, resultado: r.compra };
@@ -190,13 +269,21 @@ export async function editarCompra({ db, uid, tarjetaId, compraId, cambios } = {
   return { compra };
 }
 
-export async function eliminarCompra({ db, uid, tarjetaId, compraId } = {}) {
+export async function eliminarCompra({ db, uid, tarjetaId, compraId, ahora = new Date() } = {}) {
   const id = validarTarjetaId(tarjetaId);
 
   const compra = await mutar({
     db,
     uid,
     tarjetaId: id,
+    ahora,
+    guardia: (ctx) => {
+      const actual = (ctx.tarjeta?.compras ?? []).find(
+        (item) => item.id === compraId,
+      );
+      if (!actual) return;
+      guardiaDeCompra(ctx, actual);
+    },
     aplicar: (actual) => {
       const r = sinCompra(actual, id, compraId);
       return { tarjetas: r.tarjetas, resultado: r.compra };
@@ -208,7 +295,7 @@ export async function eliminarCompra({ db, uid, tarjetaId, compraId } = {}) {
 
 // ── pagos ─────────────────────────────────────────────────────────────────
 
-export async function guardarPago({ db, uid, tarjetaId, cicloKey, moneda, pago } = {}) {
+export async function guardarPago({ db, uid, tarjetaId, cicloKey, moneda, pago, ahora = new Date() } = {}) {
   const id = validarTarjetaId(tarjetaId);
   const ciclo = validarCicloKey(cicloKey);
   const mon = validarMonedaPago(moneda);
@@ -218,6 +305,8 @@ export async function guardarPago({ db, uid, tarjetaId, cicloKey, moneda, pago }
     db,
     uid,
     tarjetaId: id,
+    ahora,
+    guardia: (ctx) => guardiaDeCiclo(ctx, ciclo),
     aplicar: (actual) => {
       const r = conPago(actual, id, ciclo, mon, validado);
       return { tarjetas: r.tarjetas, resultado: r.pago };
@@ -227,7 +316,7 @@ export async function guardarPago({ db, uid, tarjetaId, cicloKey, moneda, pago }
   return { pago: guardado };
 }
 
-export async function eliminarPago({ db, uid, tarjetaId, cicloKey, moneda } = {}) {
+export async function eliminarPago({ db, uid, tarjetaId, cicloKey, moneda, ahora = new Date() } = {}) {
   const id = validarTarjetaId(tarjetaId);
   const ciclo = validarCicloKey(cicloKey);
   const mon = validarMonedaPago(moneda);
@@ -236,6 +325,8 @@ export async function eliminarPago({ db, uid, tarjetaId, cicloKey, moneda } = {}
     db,
     uid,
     tarjetaId: id,
+    ahora,
+    guardia: (ctx) => guardiaDeCiclo(ctx, ciclo),
     aplicar: (actual) => {
       const r = sinPago(actual, id, ciclo, mon);
       return { tarjetas: r.tarjetas, resultado: r.pago };
@@ -247,7 +338,7 @@ export async function eliminarPago({ db, uid, tarjetaId, cicloKey, moneda } = {}
 
 // ── apertura ──────────────────────────────────────────────────────────────
 
-export async function agregarApertura({ db, uid, tarjetaId, plan } = {}) {
+export async function agregarApertura({ db, uid, tarjetaId, plan, ahora = new Date() } = {}) {
   const id = validarTarjetaId(tarjetaId);
   const validado = validarApertura(plan);
   const planId = nuevoId();
@@ -257,6 +348,8 @@ export async function agregarApertura({ db, uid, tarjetaId, plan } = {}) {
     db,
     uid,
     tarjetaId: id,
+    ahora,
+    guardia: guardiaSinPendiente,
     aplicar: (actual) => {
       const r = conApertura(actual, id, completo);
       return { tarjetas: r.tarjetas, resultado: r.plan };
@@ -266,13 +359,15 @@ export async function agregarApertura({ db, uid, tarjetaId, plan } = {}) {
   return { planId, plan: guardado };
 }
 
-export async function editarApertura({ db, uid, tarjetaId, planId, cambios } = {}) {
+export async function editarApertura({ db, uid, tarjetaId, planId, cambios, ahora = new Date() } = {}) {
   const id = validarTarjetaId(tarjetaId);
 
   const plan = await mutar({
     db,
     uid,
     tarjetaId: id,
+    ahora,
+    guardia: guardiaSinPendiente,
     aplicar: (actual) => {
       const r = conAperturaEditada(actual, id, planId, cambios);
       return { tarjetas: r.tarjetas, resultado: r.plan };
@@ -282,13 +377,15 @@ export async function editarApertura({ db, uid, tarjetaId, planId, cambios } = {
   return { plan };
 }
 
-export async function eliminarApertura({ db, uid, tarjetaId, planId } = {}) {
+export async function eliminarApertura({ db, uid, tarjetaId, planId, ahora = new Date() } = {}) {
   const id = validarTarjetaId(tarjetaId);
 
   const plan = await mutar({
     db,
     uid,
     tarjetaId: id,
+    ahora,
+    guardia: guardiaSinPendiente,
     aplicar: (actual) => {
       const r = sinApertura(actual, id, planId);
       return { tarjetas: r.tarjetas, resultado: r.plan };
@@ -300,7 +397,7 @@ export async function eliminarApertura({ db, uid, tarjetaId, planId } = {}) {
 
 // ── estados del ciclo ─────────────────────────────────────────────────────
 
-export async function guardarEstadoCiclo({ db, uid, tarjetaId, cicloKey, estado } = {}) {
+export async function guardarEstadoCiclo({ db, uid, tarjetaId, cicloKey, estado, ahora = new Date() } = {}) {
   const id = validarTarjetaId(tarjetaId);
   const ciclo = validarCicloKey(cicloKey);
   const est = validarEstado(estado);
@@ -309,6 +406,8 @@ export async function guardarEstadoCiclo({ db, uid, tarjetaId, cicloKey, estado 
     db,
     uid,
     tarjetaId: id,
+    ahora,
+    guardia: (ctx) => guardiaDeCiclo(ctx, ciclo),
     aplicar: (actual) => {
       const r = conEstado(actual, id, ciclo, est);
       return { tarjetas: r.tarjetas, resultado: r.estado };

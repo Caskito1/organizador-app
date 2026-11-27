@@ -16,9 +16,11 @@ import ConfigTarjetaCard from "./components/ConfigTarjetaCard";
 import ConfirmarAccionModal from "./components/ConfirmarAccionModal";
 import MenuAccionesSheet from "./components/MenuAccionesSheet";
 import PagoModal from "./components/PagoModal";
+import AvisoPendiente from "./sections/AvisoPendiente";
 import ComprasCicloCard from "./sections/ComprasCicloCard";
 import ResumenHeaderCard from "./sections/ResumenHeaderCard";
 import TarjetasHeader from "./sections/TarjetasHeader";
+import { etiquetaCiclo } from "./helpers/ciclo";
 import { mesDeCiclo } from "./helpers/fechas";
 import useTarjetas from "./hooks/useTarjetas";
 
@@ -80,7 +82,9 @@ export default function TarjetasPage() {
       <div className="mx-auto max-w-[430px] relative z-[1]">
         <TarjetasHeader
           nombre={t.tarjeta?.nombre ?? null}
-          onEditarConfig={listo ? () => setEditandoConfig(true) : null}
+          onEditarConfig={
+            listo && !t.pendiente ? () => setEditandoConfig(true) : null
+          }
           onOpenCalendar={() => setCalendarOpen(true)}
         />
 
@@ -136,19 +140,36 @@ export default function TarjetasPage() {
               rangoLabel={t.rangoLabel}
             />
 
-            {/* CTAs del ciclo: solo en el ciclo ACTUAL. «Cargar compra» siempre
-                (con o sin compras); «Cerrar factura» solo si hay datos cargados.
-                En ciclos pasados no se ofrece ninguna acción (solo lectura). */}
-            {t.cicloKey === t.cicloActual && t.estado === "sin_verificar" && (
+            {t.pendiente && (
+              <AvisoPendiente
+                etiqueta={etiquetaCiclo(t.pendiente)}
+                bloqueado={t.bloqueado}
+                onIr={
+                  t.cicloKey !== t.pendiente
+                    ? () =>
+                        t.seleccionarCiclo(
+                          mesDeCiclo(t.pendiente) ?? new Date(),
+                        )
+                    : null
+                }
+              />
+            )}
+
+            {/* CTAs (6.2-bis): Cargar solo en el ciclo actual y sin pendientes;
+                Cerrar en el actual con datos y en el pendiente sin verificar;
+                Pagar en cualquier por_pagar no bloqueado. */}
+            {(t.puedeCargarCompra || t.puedeCerrarFactura) && (
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setModal({ tipo: "compra", compra: null })}
-                  className="flex-1 cursor-pointer rounded-[14px] bg-gradient-to-br from-[#9d7bff] to-[#5b35d5] px-3 py-[11px] text-[13px] font-bold text-white shadow-[0_8px_28px_rgba(138,100,255,0.38)] transition-all hover:scale-[1.01]"
-                >
-                  Cargar compra
-                </button>
-                {t.comprasCiclo.length > 0 && (
+                {t.puedeCargarCompra && (
+                  <button
+                    type="button"
+                    onClick={() => setModal({ tipo: "compra", compra: null })}
+                    className="flex-1 cursor-pointer rounded-[14px] bg-gradient-to-br from-[#9d7bff] to-[#5b35d5] px-3 py-[11px] text-[13px] font-bold text-white shadow-[0_8px_28px_rgba(138,100,255,0.38)] transition-all hover:scale-[1.01]"
+                  >
+                    Cargar compra
+                  </button>
+                )}
+                {t.puedeCerrarFactura && (
                   <button
                     type="button"
                     onClick={() => setModal({ tipo: "cerrar" })}
@@ -160,7 +181,7 @@ export default function TarjetasPage() {
               </div>
             )}
 
-            {t.estado === "por_pagar" && (
+            {t.puedePagarResumen && (
               <button
                 type="button"
                 onClick={() => setModal({ tipo: "pago" })}

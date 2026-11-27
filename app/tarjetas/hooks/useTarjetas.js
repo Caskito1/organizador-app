@@ -10,10 +10,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { db } from "@/lib/firebase";
 
-import { cicloDeFecha } from "../helpers/ciclo";
+import { cicloDeFecha, etiquetaCiclo } from "../helpers/ciclo";
 import { esCompraEditable } from "../helpers/edicion";
 import { estadoCiclo } from "../helpers/estados";
 import { pagoCubreCiclo } from "../helpers/pagos";
+import { cicloPendiente, ciclosConDatos } from "../helpers/pendiente";
 import { claveDeMes, rotuloRango, rotuloVencimiento } from "../helpers/fechas";
 import { TarjetasError } from "../helpers/persistencia";
 import { comprasDelCiclo, resumenCiclo } from "../helpers/resumen";
@@ -118,11 +119,27 @@ export default function useTarjetas() {
   const cicloActual = cicloDeFecha(ahora, diaCierre, diaVencimiento);
   const cicloSel = cicloKey ?? cicloActual;
 
-  // Primer ciclo por defecto: el CICLO actual (no el mes calendario).
+  // 6.2-bis: factura pendiente (ciclo pasado con datos y sin pagar). Bloquea
+  // las escrituras de los ciclos posteriores hasta que se resuelva.
+  const pendiente = useMemo(
+    () =>
+      cicloPendiente({
+        compras: tarjeta?.compras ?? [],
+        apertura: tarjeta?.apertura ?? [],
+        ciclos: tarjeta?.ciclos ?? {},
+        cicloActual,
+        diaCierre,
+        diaVencimiento,
+      }),
+    [tarjeta, cicloActual, diaCierre, diaVencimiento],
+  );
+
+  // Primer ciclo por defecto: el pendiente más viejo si existe; si no, el
+  // CICLO actual (no el mes calendario).
   useEffect(() => {
     if (estado.loading || cicloKey) return;
-    setCicloKey(cicloDeFecha(estado.ahora ?? new Date(), diaCierre, diaVencimiento));
-  }, [estado.loading, estado.ahora, diaCierre, diaVencimiento, cicloKey]);
+    setCicloKey(pendiente ?? cicloActual);
+  }, [estado.loading, cicloActual, pendiente, cicloKey]);
 
   const resumen = useMemo(
     () =>
@@ -149,6 +166,33 @@ export default function useTarjetas() {
     [tarjeta, cicloSel, diaCierre, diaVencimiento],
   );
 
+  // 6.2-bis: CTAs y bloqueo del ciclo seleccionado.
+  const bloqueado = !!pendiente && !!cicloSel && cicloSel > pendiente;
+  const esCicloPendiente = !!pendiente && cicloSel === pendiente;
+  const tieneDatos = useMemo(
+    () =>
+      ciclosConDatos({
+        compras: tarjeta?.compras ?? [],
+        apertura: tarjeta?.apertura ?? [],
+        diaCierre,
+        diaVencimiento,
+      }).has(cicloSel),
+    [tarjeta, cicloSel, diaCierre, diaVencimiento],
+  );
+  const puedeCargarCompra = cicloSel === cicloActual && !pendiente;
+  const puedeCerrarFactura =
+    estadoDelCiclo === "sin_verificar" &&
+    tieneDatos &&
+    ((cicloSel === cicloActual && !pendiente) || esCicloPendiente);
+  const puedePagarResumen = estadoDelCiclo === "por_pagar" && !bloqueado;
+
+  function errorBloqueo() {
+    return new TarjetasError(
+      "CICLO_BLOQUEADO",
+      `Hay una factura pendiente (${etiquetaCiclo(pendiente) ?? pendiente}) sin cerrar o sin pagar. Resolvela antes de operar ciclos posteriores.`,
+    );
+  }
+
   async function ejecutar(accion) {
     setGuardando(true);
     try {
@@ -159,6 +203,8 @@ export default function useTarjetas() {
   }
 
   async function guardarConfig(config) {
+    if (pendiente) throw errorBloqueo();
+
     await ejecutar(() =>
       guardarTarjeta({ db, uid, tarjetaId: TARJETA_ID, config }),
     );
@@ -167,6 +213,8 @@ export default function useTarjetas() {
   }
 
   async function crearCompra(compra) {
+    if (pendiente) throw errorBloqueo();
+
     await ejecutar(() =>
       agregarCompra({ db, uid, tarjetaId: TARJETA_ID, compra }),
     );
@@ -174,6 +222,8 @@ export default function useTarjetas() {
   }
 
   async function actualizarCompra(compraId, cambios) {
+    if (bloqueado) throw errorBloqueo();
+
     await ejecutar(() =>
       editarCompra({ db, uid, tarjetaId: TARJETA_ID, compraId, cambios }),
     );
@@ -181,6 +231,8 @@ export default function useTarjetas() {
   }
 
   async function borrarCompra(compraId) {
+    if (bloqueado) throw errorBloqueo();
+
     await ejecutar(() =>
       eliminarCompra({ db, uid, tarjetaId: TARJETA_ID, compraId }),
     );
@@ -188,6 +240,8 @@ export default function useTarjetas() {
   }
 
   async function cerrarFactura() {
+    if (bloqueado) throw errorBloqueo();
+
     await ejecutar(() =>
       guardarEstadoCiclo({
         db,
@@ -201,6 +255,8 @@ export default function useTarjetas() {
   }
 
   async function pagarResumen(pagos) {
+    if (bloqueado) throw errorBloqueo();
+
     const resultado = await ejecutar(async () => {
       const registrados = { ...(tarjeta?.pagos?.[cicloSel] ?? {}) };
 
@@ -263,7 +319,14 @@ export default function useTarjetas() {
     diaVencimiento,
     vencimientoLabel: rotuloVencimiento(cicloSel, diaVencimiento),
     rangoLabel: rotuloRango(cicloSel, diaCierre, diaVencimiento),
+    pendiente,
+    bloqueado,
+    puedeCargarCompra,
+    puedeCerrarFactura,
+    puedePagarResumen,
+    esCicloPendiente,
     esCompraEditable: (compra) =>
+      !bloqueado &&
       esCompraEditable(compra, {
         cicloKey: cicloSel,
         cicloActual,
