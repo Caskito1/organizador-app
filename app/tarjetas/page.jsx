@@ -45,7 +45,36 @@ export default function TarjetasPage() {
         {
           id: "editar",
           label: "Editar",
-          onSelect: () => setModal({ tipo: "compra", compra }),
+          onSelect: async () => {
+            // 6.3-bis: vínculo para precargar nombre y pre-validar el monto.
+            const vinculo = await t.vinculoDe(compra);
+            const devuelto = Number(vinculo?.devuelto || 0);
+            const montoBloqueado =
+              !!vinculo &&
+              (devuelto > 0 ||
+                vinculo.condonada ||
+                vinculo.estado === "eliminada");
+            let motivoMontoBloqueado = null;
+            if (vinculo?.estado === "eliminada") {
+              motivoMontoBloqueado =
+                "El reintegro está eliminado; recreá el vínculo.";
+            } else if (vinculo?.condonada) {
+              motivoMontoBloqueado =
+                "No se puede cambiar el monto: el reintegro está perdonado.";
+            } else if (devuelto > 0) {
+              motivoMontoBloqueado =
+                "No se puede cambiar el monto: el reintegro ya tiene cobros registrados.";
+            }
+
+            setModal({
+              tipo: "compra",
+              compra,
+              contraparteInicial:
+                vinculo?.contraparteNombre ?? compra.contraparteNombre ?? null,
+              montoBloqueado,
+              motivoMontoBloqueado,
+            });
+          },
         },
         {
           id: "eliminar",
@@ -75,6 +104,21 @@ export default function TarjetasPage() {
     if (confirmar?.tipo === "compra") {
       return t.acciones.borrarCompra(confirmar.id);
     }
+    if (confirmar?.tipo === "recrear") {
+      return t.acciones.recrearReintegro(confirmar.id);
+    }
+  }
+
+  function pedirRecrear(compra) {
+    setConfirmar({
+      tipo: "recrear",
+      id: compra.id,
+      boton: "Recrear",
+      peligro: false,
+      titulo: "Recrear reintegro",
+      descripcion:
+        "Se creará una obligación nueva por el total y se vinculará a esta compra. El vínculo eliminado queda como histórico.",
+    });
   }
 
   return (
@@ -196,6 +240,8 @@ export default function TarjetasPage() {
               resumen={t.resumen}
               esEditable={t.esCompraEditable}
               onMenu={abrirMenuCompra}
+              vinculos={t.vinculos}
+              onRecrear={pedirRecrear}
             />
           </div>
         )}
@@ -213,6 +259,9 @@ export default function TarjetasPage() {
       {modal?.tipo === "compra" && (
         <CompraModal
           inicial={modal.compra}
+          contraparteInicial={modal.contraparteInicial ?? null}
+          montoBloqueado={modal.montoBloqueado ?? false}
+          motivoMontoBloqueado={modal.motivoMontoBloqueado ?? null}
           cicloKey={t.cicloKey}
           diaCierre={t.diaCierre}
           diaVencimiento={t.diaVencimiento}
@@ -247,6 +296,8 @@ export default function TarjetasPage() {
         <ConfirmarAccionModal
           titulo={confirmar.titulo}
           descripcion={confirmar.descripcion}
+          boton={confirmar.boton}
+          peligro={confirmar.peligro}
           guardando={t.guardando}
           onClose={() => setConfirmar(null)}
           onConfirmar={ejecutarConfirmacion}

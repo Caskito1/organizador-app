@@ -164,6 +164,7 @@ export default function FilaReintegro({
 
   // 4.3-bis — permisos de la fila (mismas reglas que los helpers).
   const esRegistrador = r.registradoPor === uid;
+  const esDeTarjeta = r.movimientoInicialTipo === "tarjeta";
   const esAcreedor =
     r.contraparteUid == null
       ? esRegistrador
@@ -175,7 +176,9 @@ export default function FilaReintegro({
   const accionesObl = [];
   if (onAccionObligacion) {
     if (abierta) {
-      if (esRegistrador && onEditarObligacion) {
+      // 6.3-bis: en las obligaciones de tarjeta se ocultan editar/eliminar
+      // (fuente única en /tarjetas). Cobro, saldar y perdonar siguen acá.
+      if (!esDeTarjeta && esRegistrador && onEditarObligacion) {
         accionesObl.push({
           id: "editar",
           label: "Editar monto",
@@ -183,7 +186,7 @@ export default function FilaReintegro({
         });
       }
       // 5.0-fecha (U-2): operación INDEPENDIENTE del monto.
-      if (esRegistrador && onEditarFecha) {
+      if (!esDeTarjeta && esRegistrador && onEditarFecha) {
         accionesObl.push({
           id: "editar-fecha",
           label: "Editar fecha",
@@ -197,7 +200,7 @@ export default function FilaReintegro({
           onSelect: () => onAccionObligacion(r, "condonar"),
         });
       }
-      if (esRegistrador) {
+      if (!esDeTarjeta && esRegistrador) {
         accionesObl.push({
           id: "eliminar",
           label: "Eliminar",
@@ -248,6 +251,11 @@ export default function FilaReintegro({
           <ChipFechaEdicion ev={evFecha} />
           <ChipTipoDinero r={r} />
           <ChipTarjeta r={r} />
+          {esDeTarjeta && (
+            <p className="mt-[3px] text-[10px] text-text-muted">
+              Este reintegro se edita desde Tarjetas.
+            </p>
+          )}
         </div>
 
         <div className="flex-shrink-0">

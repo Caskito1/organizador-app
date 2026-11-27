@@ -163,7 +163,11 @@ test("validarCompra: normaliza y valida", () => {
   assert.equal(c.detalle, "Heladera");
   assert.equal(c.tipo, "personal");
   assert.equal(c.gastoVinculadoId, null);
+  assert.equal(c.contraparteNombre, null);
   assert.ok(c.fecha instanceof Date);
+
+  const conNombre = validarCompra(compraBase({ contraparteNombre: "  Bruno  " }));
+  assert.equal(conNombre.contraparteNombre, "Bruno");
 
   const minimo = validarCompra({ monto: 12000, moneda: "UYU", fecha: fecha(2026, 10, 1) });
   assert.equal(minimo.cuotasTotal, 1);
@@ -177,6 +181,23 @@ test("validarCompra: normaliza y valida", () => {
   lanza(() => validarCompra(compraBase({ fecha: "no-es-fecha" })), "COMPRA_INVALIDA");
   lanza(() => validarCompra(compraBase({ tipo: "otro" })), "COMPRA_INVALIDA");
   lanza(() => validarCompra(compraBase({ gastoVinculadoId: 123 })), "COMPRA_INVALIDA");
+  lanza(() => validarCompra(compraBase({ contraparteNombre: 123 })), "COMPRA_INVALIDA");
+  lanza(() => validarCompra(compraBase({ contraparteNombre: "   " })), "COMPRA_INVALIDA");
+});
+
+test("normalizarTarjeta: conserva y recorta contraparteNombre de las compras", () => {
+  const t = normalizarTarjeta({
+    ...tarjetaCon(),
+    compras: [
+      { id: "c1", contraparteNombre: "  Bruno  " },
+      { id: "c2" },
+      { id: "c3", contraparteNombre: "   " },
+    ],
+  });
+
+  assert.equal(t.compras[0].contraparteNombre, "Bruno");
+  assert.equal("contraparteNombre" in t.compras[1], false);
+  assert.equal("contraparteNombre" in t.compras[2], false);
 });
 
 test("validarPago / validarMonedaPago", () => {

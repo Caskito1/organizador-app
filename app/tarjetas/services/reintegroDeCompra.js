@@ -1,20 +1,26 @@
 // tarjetas/services/reintegroDeCompra.js
-// 6.3 — Compra «Reintegro» ↔ obligación en `reintegros` (alta/baja/edición
-// ATÓMICAS) con la guarda de factura pendiente de 6.2-bis.
+// 6.3 + 6.3-bis — Compra «Reintegro» ↔ obligación en `reintegros`.
 //
-// Plan: PROPUESTA-ETAPA-6.md §13.3.3–§13.3.5. Un solo `runTransaction` escribe
-// `users/{uid}.tarjetas` + `reintegros/{rid}` + `reintegros/{rid}/eventos`, así
-// que no puede quedar compra sin obligación ni al revés.
+// FUENTE ÚNICA: la compra (en `users/{uid}.tarjetas`) manda. Desde /tarjetas se
+// editan monto, detalle, nombre del tercero, cuotas y fecha; /reintegros solo
+// opera la deuda (cobros, saldar, condonar). Cada cambio de la compra se
+// sincroniza a la obligación en LA MISMA transacción.
 //
-// La guarda `CICLO_BLOQUEADO` se aplica ACÁ (con la tarjeta leída dentro de la
-// transacción), igual que en `services/tarjetas.js`: una pestaña vieja no puede
-// saltear el bloqueo llamando a este servicio.
+// Reglas de sincronización (sin cambios de reglas):
+//   · monto  → update #1 (rama c: registrador, devuelto == 0, sin condonación).
+//   · detalle/nombre → update #2 (rama d: hasOnly concepto/contraparteNombre/
+//     registradoPorNombre). Son DOS escrituras separadas a propósito:
+//     `affectedKeys` se evalúa por escritura.
+//
+// La guarda `CICLO_BLOQUEADO` de 6.2-bis se aplica acá también.
 
 import {
   doc,
+  getDoc,
   runTransaction,
   serverTimestamp,
   Timestamp,
+  updateDoc,
 } from "firebase/firestore";
 
 import { aDate } from "../../gastos/helpers/dateHelpers.js";
@@ -25,6 +31,7 @@ import {
   compraBloqueada,
 } from "../helpers/pendiente.js";
 import {
+  CONCEPTO_POR_DEFECTO,
   MOTIVO_ELIMINACION,
   obligacionDeCompra,
 } from "../helpers/obligacion.js";
@@ -41,10 +48,21 @@ import {
 
 const COLECCION = "users";
 
-const CAMPOS_NO_EDITABLES = ["id", "createdAt", "gastoVinculadoId", "tipo", "moneda"];
+const CAMPOS_NO_EDITABLES = [
+  "id",
+  "createdAt",
+  "gastoVinculadoId",
+  "tipo",
+  "moneda",
+];
 
 function refUsuario(db, uid) {
   return doc(db, COLECCION, uid);
+}
+
+function conceptoDe(detalle) {
+  const limpio = typeof detalle === "string" ? detalle.trim() : "";
+  return limpio || CONCEPTO_POR_DEFECTO;
 }
 
 function perfilFaltante() {
@@ -61,6 +79,13 @@ function tarjetaNoEncontrada(id) {
   );
 }
 
+function compraNoEncontrada(compraId) {
+  return new TarjetasError(
+    "COMPRA_NO_ENCONTRADA",
+    `No existe la compra ${String(compraId)}.`,
+  );
+}
+
 function errorPendiente(pendiente) {
   return new TarjetasError(
     "CICLO_BLOQUEADO",
@@ -68,8 +93,6 @@ function errorPendiente(pendiente) {
   );
 }
 
-// Misma guarda que services/tarjetas.js: bloquea si la compra toca un ciclo
-// posterior al pendiente.
 function bloquearCompra(tarjeta, ahora, compra) {
   const contexto = {
     compras: tarjeta.compras ?? [],
@@ -82,6 +105,23 @@ function bloquearCompra(tarjeta, ahora, compra) {
 
   if (compraBloqueada({ ...contexto, compra })) {
     throw errorPendiente(cicloPendiente(contexto));
+  }
+}
+
+// Los campos inmutables solo se rechazan si CAMBIAN: el modal de edición envía
+// el tipo/moneda actuales (read-only) y deben poder viajar sin romper.
+function validarCambiosInmutables(compraActual, cambios) {
+  const alterados = CAMPOS_NO_EDITABLES.some((campo) => {
+    if (!cambios || !(campo in cambios)) return false;
+    if (campo === "id" || campo === "createdAt") return true;
+    return cambios[campo] !== compraActual[campo];
+  });
+
+  if (alterados) {
+    throw new TarjetasError(
+      "COMPRA_INVALIDA",
+      "El tipo, la moneda y el vínculo se definen en el alta y no se editan.",
+    );
   }
 }
 
@@ -105,6 +145,17 @@ async function leerContexto(tx, db, uid, tarjetaId) {
   return { ref, actual, tarjeta };
 }
 
+function eventoCreacion(uid, monto, sentido) {
+  return {
+    registradoPor: uid,
+    tipo: "creacion",
+    entidad: "obligacion",
+    monto,
+    sentido,
+    createdAt: serverTimestamp(),
+  };
+}
+
 // ── alta ──────────────────────────────────────────────────────────────────
 
 export async function crearCompraConReintegro({
@@ -119,7 +170,10 @@ export async function crearCompraConReintegro({
   ahora = new Date(),
 } = {}) {
   const id = validarTarjetaId(tarjetaId);
-  const validada = validarCompra(compra);
+  const validada = validarCompra({
+    ...compra,
+    contraparteNombre: contraparteNombre ?? compra?.contraparteNombre,
+  });
   if (validada.tipo !== "reintegro") {
     throw new TarjetasError(
       "REINTEGRO_INVALIDO",
@@ -143,7 +197,7 @@ export async function crearCompraConReintegro({
     uid,
     uidNombre,
     compra: completa,
-    contraparteNombre,
+    contraparteNombre: contraparteNombre ?? completa.contraparteNombre,
   });
   const nuevaCompra = { ...completa, createdAt: new Date() };
 
@@ -158,8 +212,6 @@ export async function crearCompraConReintegro({
         (item) => item.id === idCompra,
       );
       if (existente) {
-        // Reintento con los mismos ids: la transacción anterior commiteó
-        // compra + obligación juntas. No se duplica nada.
         resultado = existente;
         return;
       }
@@ -174,15 +226,10 @@ export async function crearCompraConReintegro({
         fecha: Timestamp.fromDate(fecha),
         createdAt: serverTimestamp(),
       });
-
-      tx.set(doc(db, "reintegros", idReintegro, "eventos", nuevoId()), {
-        registradoPor: uid,
-        tipo: "creacion",
-        entidad: "obligacion",
-        monto: payload.monto,
-        sentido: payload.sentido,
-        createdAt: serverTimestamp(),
-      });
+      tx.set(
+        doc(db, "reintegros", idReintegro, "eventos", nuevoId()),
+        eventoCreacion(uid, payload.monto, payload.sentido),
+      );
 
       resultado = nuevaCompra;
     });
@@ -202,7 +249,7 @@ export async function crearCompraConReintegro({
   };
 }
 
-// ── edición ───────────────────────────────────────────────────────────────
+// ── edición (fuente única) ────────────────────────────────────────────────
 
 export async function editarCompraVinculada({
   db,
@@ -213,78 +260,223 @@ export async function editarCompraVinculada({
   ahora = new Date(),
 } = {}) {
   const id = validarTarjetaId(tarjetaId);
-  if (cambios && CAMPOS_NO_EDITABLES.some((campo) => campo in cambios)) {
+  const ref = refUsuario(db, uid);
+
+  // Pre-lectura (sin transacción): validar y capturar los valores viejos para
+  // la compensación.
+  let snap;
+  try {
+    snap = await getDoc(ref);
+  } catch (error) {
     throw new TarjetasError(
-      "COMPRA_INVALIDA",
-      "El tipo, la moneda y el vínculo no se editan.",
+      "LECTURA_FALLIDA",
+      "No pudimos leer la tarjeta.",
+      { causa: error },
     );
   }
+  if (!snap.exists()) throw perfilFaltante();
 
+  const actual = normalizarTarjetas(snap.data()?.tarjetas);
+  const tarjeta = actual[id];
+  if (!tarjeta) throw tarjetaNoEncontrada(id);
+
+  const compraActual = (tarjeta.compras ?? []).find(
+    (item) => item.id === compraId,
+  );
+  if (!compraActual) throw compraNoEncontrada(compraId);
+
+  validarCambiosInmutables(compraActual, cambios);
+
+  const fusion = { ...compraActual, ...(cambios ?? {}) };
+  bloquearCompra(tarjeta, ahora, fusion);
+
+  const r = conCompraEditada(actual, id, compraId, cambios);
+  const nuevaCompra = r.compra;
+
+  const rid = compraActual.gastoVinculadoId;
+  let obl = null;
+  let oblRef = null;
+
+  if (rid) {
+    oblRef = doc(db, "reintegros", rid);
+    let oblSnap;
+    try {
+      oblSnap = await getDoc(oblRef);
+    } catch (error) {
+      throw new TarjetasError(
+        "LECTURA_FALLIDA",
+        "No pudimos leer el reintegro vinculado.",
+        { causa: error },
+      );
+    }
+    if (!oblSnap.exists()) {
+      throw new TarjetasError(
+        "OBLIGACION_NO_ENCONTRADA",
+        "No se encontró el reintegro vinculado.",
+      );
+    }
+    obl = oblSnap.data();
+  }
+
+  const montoNuevo = nuevaCompra.monto;
+  const cambiaMonto = !!obl && montoNuevo !== Number(compraActual.monto);
+  const conceptoNuevo = conceptoDe(nuevaCompra.detalle);
+  const cambiaConcepto = !!obl && conceptoNuevo !== obl.concepto;
+  const nombreNuevo = nuevaCompra.contraparteNombre;
+  const cambiaNombre =
+    !!obl && !!nombreNuevo && nombreNuevo !== obl.contraparteNombre;
+
+  if (obl) {
+    const cerrada = "condonacion" in obl || "eliminacion" in obl;
+
+    if (cambiaMonto) {
+      if (cerrada) {
+        throw new TarjetasError(
+          "OBLIGACION_CERRADA",
+          "El reintegro vinculado ya está cerrado; no se puede cambiar el monto.",
+        );
+      }
+      if (Number(obl.devuelto || 0) > 0) {
+        throw new TarjetasError(
+          "MONTO_BLOQUEADO",
+          "Ya hay cobros registrados: no se puede cambiar el monto.",
+        );
+      }
+    }
+    if ((cambiaConcepto || cambiaNombre) && cerrada) {
+      throw new TarjetasError(
+        "OBLIGACION_CERRADA",
+        "El reintegro vinculado está cerrado; no se puede editar desde Tarjetas.",
+      );
+    }
+  }
+
+  // ALTERNATIVA B: escrituras secuenciales (no atómicas; las ramas hasOnly de
+  // reglas son excluyentes y Firestore fusiona affectedKeys por doc/commit).
+  // Orden: (a) monto [la única que puede fallar por reglas], (b) concepto/
+  // nombre, (c) compra. Compensación best-effort si (b) o (c) fallan.
+  let montoAplicado = false;
+  let conceptosAplicados = false;
   let resultado = null;
 
   try {
-    await runTransaction(db, async (tx) => {
-      const { ref, actual, tarjeta } = await leerContexto(tx, db, uid, id);
-      const compraActual = (tarjeta.compras ?? []).find(
-        (item) => item.id === compraId,
-      );
-      if (!compraActual) {
-        throw new TarjetasError(
-          "COMPRA_NO_ENCONTRADA",
-          `No existe la compra ${String(compraId)}.`,
-        );
-      }
-
-      const fusion = { ...compraActual, ...(cambios ?? {}) };
-      bloquearCompra(tarjeta, ahora, fusion);
-
-      const r = conCompraEditada(actual, id, compraId, cambios);
-      const rid = compraActual.gastoVinculadoId;
-
-      // Solo el MONTO se sincroniza (T-3): el concepto y el nombre de la
-      // contraparte son fotografía del alta.
-      if (rid && r.compra.monto !== Number(compraActual.monto)) {
-        const oblRef = doc(db, "reintegros", rid);
-        const oblSnap = await tx.get(oblRef);
-        if (!oblSnap.exists()) {
+    // (a) monto de la obligación.
+    if (obl && cambiaMonto) {
+      await runTransaction(db, async (tx) => {
+        const os = await tx.get(oblRef);
+        if (!os.exists()) {
           throw new TarjetasError(
             "OBLIGACION_NO_ENCONTRADA",
             "No se encontró el reintegro vinculado.",
           );
         }
-        const obl = oblSnap.data();
-        if ("condonacion" in obl || "eliminacion" in obl) {
+        const o = os.data();
+        if ("condonacion" in o || "eliminacion" in o) {
           throw new TarjetasError(
             "OBLIGACION_CERRADA",
             "El reintegro vinculado ya está cerrado; no se puede cambiar el monto.",
           );
         }
-        if (Number(obl.devuelto || 0) > 0) {
+        if (Number(o.devuelto || 0) > 0) {
           throw new TarjetasError(
             "MONTO_BLOQUEADO",
             "Ya hay cobros registrados: no se puede cambiar el monto.",
           );
         }
 
-        tx.update(oblRef, { monto: r.compra.monto });
+        tx.update(oblRef, { monto: montoNuevo });
         tx.set(doc(db, "reintegros", rid, "eventos", nuevoId()), {
           registradoPor: uid,
           tipo: "edicion",
           entidad: "obligacion",
-          montoAnterior: Number(obl.monto || 0),
-          montoNuevo: r.compra.monto,
+          montoAnterior: Number(o.monto || 0),
+          montoNuevo,
           createdAt: serverTimestamp(),
         });
-      }
+      });
+      montoAplicado = true;
+    }
 
-      escribirTarjeta(tx, ref, r.tarjetas, id);
-      resultado = r.compra;
+    // (b) concepto / nombre de la obligación.
+    if (obl && (cambiaConcepto || cambiaNombre)) {
+      await runTransaction(db, async (tx) => {
+        const os = await tx.get(oblRef);
+        if (!os.exists()) {
+          throw new TarjetasError(
+            "OBLIGACION_NO_ENCONTRADA",
+            "No se encontró el reintegro vinculado.",
+          );
+        }
+        const o = os.data();
+        if ("condonacion" in o || "eliminacion" in o) {
+          throw new TarjetasError(
+            "OBLIGACION_CERRADA",
+            "El reintegro vinculado está cerrado; no se puede editar desde Tarjetas.",
+          );
+        }
+
+        const cambiosObligacion = {};
+        if (cambiaConcepto) cambiosObligacion.concepto = conceptoNuevo;
+        if (cambiaNombre) cambiosObligacion.contraparteNombre = nombreNuevo;
+
+        tx.update(oblRef, cambiosObligacion);
+      });
+      conceptosAplicados = true;
+    }
+
+    // (c) la compra (fuente única).
+    await runTransaction(db, async (tx) => {
+      const su = await tx.get(ref);
+      if (!su.exists()) throw perfilFaltante();
+
+      const actualTx = normalizarTarjetas(su.data()?.tarjetas);
+      const tarjetaTx = actualTx[id];
+      if (!tarjetaTx) throw tarjetaNoEncontrada(id);
+
+      const compraTx = (tarjetaTx.compras ?? []).find(
+        (item) => item.id === compraId,
+      );
+      if (!compraTx) throw compraNoEncontrada(compraId);
+
+      const fusionTx = { ...compraTx, ...(cambios ?? {}) };
+      bloquearCompra(tarjetaTx, ahora, fusionTx);
+
+      const rTx = conCompraEditada(actualTx, id, compraId, cambios);
+      escribirTarjeta(tx, ref, rTx.tarjetas, id);
+      resultado = rTx.compra;
     });
   } catch (error) {
+    // Compensación best-effort: revertir lo aplicado, en orden inverso.
+    if (montoAplicado) {
+      try {
+        await updateDoc(oblRef, { monto: Number(obl.monto || 0) });
+      } catch {
+        // best-effort: si no se puede revertir, queda el monto nuevo.
+      }
+    }
+    if (conceptosAplicados) {
+      try {
+        const revertir = {};
+        if (cambiaConcepto) revertir.concepto = obl.concepto;
+        if (
+          cambiaNombre &&
+          typeof obl.contraparteNombre === "string" &&
+          obl.contraparteNombre
+        ) {
+          revertir.contraparteNombre = obl.contraparteNombre;
+        }
+        if (Object.keys(revertir).length) {
+          await updateDoc(oblRef, revertir);
+        }
+      } catch {
+        // best-effort
+      }
+    }
+
     if (error instanceof TarjetasError) throw error;
     throw new TarjetasError(
       "ESCRITURA_FALLIDA",
-      "No pudimos editar la compra. No se guardó nada.",
+      "No pudimos editar la compra. Se intentó revertir lo aplicado.",
       { causa: error },
     );
   }
@@ -310,12 +502,7 @@ export async function eliminarCompraVinculada({
       const compra = (tarjeta.compras ?? []).find(
         (item) => item.id === compraId,
       );
-      if (!compra) {
-        throw new TarjetasError(
-          "COMPRA_NO_ENCONTRADA",
-          `No existe la compra ${String(compraId)}.`,
-        );
-      }
+      if (!compra) throw compraNoEncontrada(compraId);
 
       bloquearCompra(tarjeta, ahora, compra);
 
@@ -327,8 +514,6 @@ export async function eliminarCompraVinculada({
         if (oblSnap.exists()) {
           const obl = oblSnap.data();
 
-          // `allow delete: if false`: la obligación no se borra físicamente.
-          // Si ya estaba eliminada, no se repite la constancia.
           if (!("eliminacion" in obl)) {
             if ("condonacion" in obl) {
               throw new TarjetasError(
@@ -336,9 +521,7 @@ export async function eliminarCompraVinculada({
                 "El reintegro vinculado está perdonado; no se puede eliminar la compra.",
               );
             }
-            // Barrera de CLIENTE (las reglas no exigen devuelto == 0): se
-            // bloquea cualquier cobro, total o parcial, porque acá se borra el
-            // origen de la deuda.
+            // Barrera de CLIENTE (las reglas no exigen devuelto == 0).
             if (Number(obl.devuelto || 0) > 0) {
               throw new TarjetasError(
                 "COMPRA_CON_COBROS",
@@ -380,4 +563,144 @@ export async function eliminarCompraVinculada({
   }
 
   return { compra: resultado };
+}
+
+// ── lectura de vínculos (para avisos y prefill) ───────────────────────────
+
+export async function leerVinculos({ db, rids = [] } = {}) {
+  const salida = {};
+  const unicos = [
+    ...new Set((rids ?? []).filter((rid) => typeof rid === "string" && rid)),
+  ];
+
+  await Promise.all(
+    unicos.map(async (rid) => {
+      try {
+        const snap = await getDoc(doc(db, "reintegros", rid));
+        if (!snap.exists()) {
+          salida[rid] = { estado: "no_encontrada" };
+          return;
+        }
+        const o = snap.data();
+        salida[rid] = {
+          estado: o.eliminacion ? "eliminada" : "activa",
+          devuelto: Number(o.devuelto || 0),
+          condonada: !!o.condonacion,
+          contraparteNombre:
+            typeof o.contraparteNombre === "string"
+              ? o.contraparteNombre
+              : null,
+        };
+      } catch {
+        salida[rid] = { estado: "desconocido" };
+      }
+    }),
+  );
+
+  return salida;
+}
+
+// ── recrear el vínculo huérfano ───────────────────────────────────────────
+
+export async function recrearReintegro({
+  db,
+  uid,
+  uidNombre,
+  tarjetaId,
+  compraId,
+  ahora = new Date(),
+} = {}) {
+  const id = validarTarjetaId(tarjetaId);
+  let resultado = null;
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const { ref, actual, tarjeta } = await leerContexto(tx, db, uid, id);
+      const compra = (tarjeta.compras ?? []).find(
+        (item) => item.id === compraId,
+      );
+      if (!compra) throw compraNoEncontrada(compraId);
+      if (compra.tipo !== "reintegro" || !compra.gastoVinculadoId) {
+        throw new TarjetasError(
+          "REINTEGRO_INVALIDO",
+          "La compra no tiene un reintegro vinculado para recrear.",
+        );
+      }
+
+      const ridViejo = compra.gastoVinculadoId;
+      const viejoRef = doc(db, "reintegros", ridViejo);
+      const viejoSnap = await tx.get(viejoRef);
+      if (!viejoSnap.exists()) {
+        throw new TarjetasError(
+          "OBLIGACION_NO_ENCONTRADA",
+          "No se encontró la obligación vinculada.",
+        );
+      }
+      const viejo = viejoSnap.data();
+      if (!("eliminacion" in viejo)) {
+        throw new TarjetasError(
+          "OBLIGACION_CERRADA",
+          "El reintegro vinculado no está eliminado: no hay nada que recrear.",
+        );
+      }
+      if (Number(viejo.devuelto || 0) > 0) {
+        throw new TarjetasError(
+          "REVISION_MANUAL",
+          "El vínculo eliminado tiene cobros registrados: requiere revisión manual.",
+        );
+      }
+
+      bloquearCompra(tarjeta, ahora, compra);
+
+      const ridNuevo = nuevoId();
+      const nombre =
+        compra.contraparteNombre || viejo.contraparteNombre || null;
+      const completa = {
+        ...compra,
+        gastoVinculadoId: ridNuevo,
+        contraparteNombre: nombre,
+      };
+      const payload = obligacionDeCompra({
+        uid,
+        uidNombre,
+        compra: completa,
+        contraparteNombre: nombre,
+      });
+      const fecha = aDate(payload.fecha);
+      if (!fecha) {
+        throw new TarjetasError(
+          "REINTEGRO_INVALIDO",
+          "Fecha de la compra inválida.",
+        );
+      }
+
+      tx.set(doc(db, "reintegros", ridNuevo), {
+        registradoPor: uid,
+        ...payload,
+        devuelto: 0,
+        fecha: Timestamp.fromDate(fecha),
+        createdAt: serverTimestamp(),
+      });
+      tx.set(
+        doc(db, "reintegros", ridNuevo, "eventos", nuevoId()),
+        eventoCreacion(uid, payload.monto, payload.sentido),
+      );
+
+      const r = conCompraEditada(actual, id, compraId, {
+        gastoVinculadoId: ridNuevo,
+        contraparteNombre: nombre,
+      });
+      escribirTarjeta(tx, ref, r.tarjetas, id);
+      resultado = r.compra;
+    });
+  } catch (error) {
+    if (error instanceof TarjetasError) throw error;
+    throw new TarjetasError(
+      "ESCRITURA_FALLIDA",
+      "No pudimos recrear el reintegro. No se guardó nada.",
+      { causa: error },
+    );
+  }
+
+  return { rid: resultado?.gastoVinculadoId ?? null, compra: resultado };
 }

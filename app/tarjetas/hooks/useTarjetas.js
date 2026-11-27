@@ -31,6 +31,8 @@ import {
   crearCompraConReintegro,
   editarCompraVinculada,
   eliminarCompraVinculada,
+  leerVinculos,
+  recrearReintegro,
 } from "../services/reintegroDeCompra";
 
 const TARJETA_ID = "oca";
@@ -43,6 +45,7 @@ const ESTADO_INICIAL = {
   error: null,
   existe: false,
   tarjetas: {},
+  vinculos: {},
   ahora: null,
 };
 
@@ -92,11 +95,27 @@ export default function useTarjetas() {
 
       try {
         const r = await leerTarjetas({ db, uid });
+
+        // 6.3-bis: estado de los vínculos (para avisos de huérfanos y prefill
+        // del nombre). Lectura best-effort: si falla, la página sigue.
+        const rids = Object.values(r.tarjetas)
+          .flatMap((tarjeta) =>
+            (tarjeta.compras ?? []).map((compra) => compra.gastoVinculadoId),
+          )
+          .filter(Boolean);
+        let vinculos = {};
+        try {
+          vinculos = await leerVinculos({ db, rids });
+        } catch {
+          vinculos = {};
+        }
+
         setEstado({
           loading: false,
           error: null,
           existe: r.existe,
           tarjetas: r.tarjetas,
+          vinculos,
           ahora: new Date(),
         });
       } catch (error) {
@@ -347,6 +366,38 @@ export default function useTarjetas() {
     setCicloKey(claveDeMes(fecha));
   }
 
+  // 6.3-bis: vínculo para el modal de edición (nombre, cobros, condonación).
+  // Prioridad: cache de vínculos → lectura puntual de la obligación.
+  async function vinculoDe(compra) {
+    const rid = compra?.gastoVinculadoId;
+    if (!rid) return null;
+
+    const cache = (estado.vinculos ?? {})[rid];
+    if (cache) return cache;
+
+    try {
+      const leido = await leerVinculos({ db, rids: [rid] });
+      return leido[rid] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function recrearVinculo(compraId) {
+    if (bloqueado) throw errorBloqueo();
+
+    await ejecutar(() =>
+      recrearReintegro({
+        db,
+        uid,
+        uidNombre,
+        tarjetaId: TARJETA_ID,
+        compraId,
+      }),
+    );
+    await cargar({ silencioso: true });
+  }
+
   return {
     loading: estado.loading,
     error: estado.error,
@@ -372,6 +423,8 @@ export default function useTarjetas() {
     puedeCerrarFactura,
     puedePagarResumen,
     esCicloPendiente,
+    vinculos: estado.vinculos ?? {},
+    vinculoDe,
     esCompraEditable: (compra) =>
       !bloqueado &&
       esCompraEditable(compra, {
@@ -388,6 +441,7 @@ export default function useTarjetas() {
       borrarCompra,
       cerrarFactura,
       pagarResumen,
+      recrearReintegro: recrearVinculo,
     },
   };
 }

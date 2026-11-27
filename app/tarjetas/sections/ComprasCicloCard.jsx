@@ -58,6 +58,8 @@ export default function ComprasCicloCard({
   resumen,
   esEditable,
   onMenu,
+  vinculos = {},
+  onRecrear,
 }) {
   const sinDatos = comprasCiclo.length === 0;
 
@@ -79,6 +81,12 @@ export default function ComprasCicloCard({
                 cuota={cuota}
                 editable={esEditable(compra)}
                 onMenu={onMenu}
+                vinculo={
+                  compra.gastoVinculadoId
+                    ? vinculos?.[compra.gastoVinculadoId]
+                    : null
+                }
+                onRecrear={onRecrear}
               />
             ))}
           </div>

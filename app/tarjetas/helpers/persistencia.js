@@ -65,7 +65,16 @@ export function normalizarTarjeta(tarjeta) {
     diaVencimiento: Number.isInteger(t.diaVencimiento) ? t.diaVencimiento : null,
     activa: typeof t.activa === "boolean" ? t.activa : true,
     retiradaDesde: typeof t.retiradaDesde === "string" ? t.retiradaDesde : null,
-    compras: listaDeArreglo(t.compras),
+    compras: listaDeArreglo(t.compras).map((compra) => {
+      // 6.3-bis: el nombre del tercero vive en la compra (fuente única en
+      // /tarjetas). Tolerante: si falta o está vacío, no se agrega.
+      if (typeof compra.contraparteNombre !== "string") return compra;
+      const nombre = compra.contraparteNombre.trim();
+      if (nombre) return { ...compra, contraparteNombre: nombre };
+      const copia = { ...compra };
+      delete copia.contraparteNombre;
+      return copia;
+    }),
     pagos: objetoDe(t.pagos),
     ciclos: objetoDe(t.ciclos),
     apertura: listaDeArreglo(t.apertura),
@@ -187,6 +196,26 @@ export function validarCompra(compra) {
     throw new TarjetasError("COMPRA_INVALIDA", "gastoVinculadoId debe ser string o null.");
   }
 
+  // 6.3-bis: nombre del tercero (opcional; string no vacío). Se persiste en la
+  // compra para que /tarjetas sea la fuente única.
+  let contraparteNombre = null;
+  if (
+    compra.contraparteNombre !== undefined &&
+    compra.contraparteNombre !== null &&
+    compra.contraparteNombre !== ""
+  ) {
+    if (
+      typeof compra.contraparteNombre !== "string" ||
+      !compra.contraparteNombre.trim()
+    ) {
+      throw new TarjetasError(
+        "COMPRA_INVALIDA",
+        "contraparteNombre debe ser un string no vacío.",
+      );
+    }
+    contraparteNombre = compra.contraparteNombre.trim();
+  }
+
   return {
     fecha: compra.fecha,
     detalle: typeof compra.detalle === "string" ? compra.detalle.trim() : "",
@@ -195,6 +224,7 @@ export function validarCompra(compra) {
     cuotasTotal,
     tipo,
     gastoVinculadoId,
+    contraparteNombre,
   };
 }
 

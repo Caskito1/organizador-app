@@ -33,6 +33,8 @@ import {
   crearCompraConReintegro,
   editarCompraVinculada,
   eliminarCompraVinculada,
+  leerVinculos,
+  recrearReintegro,
 } from "../../app/tarjetas/services/reintegroDeCompra.js";
 import { desgloseCiclo } from "../../app/tarjetas/helpers/deuda.js";
 
@@ -709,6 +711,7 @@ test("HT17 — alta de compra reintegro: compra + obligación + evento atómicos
   assert.equal(r.tarjetas.oca.compras.length, 1);
   assert.equal(r.tarjetas.oca.compras[0].tipo, "reintegro");
   assert.equal(r.tarjetas.oca.compras[0].gastoVinculadoId, rid);
+  assert.equal(r.tarjetas.oca.compras[0].contraparteNombre, "Bruno");
 
   const o = (await getDoc(doc(dbAs(A), "reintegros", rid))).data();
   assert.equal(o.sentido, "por_cobrar");
@@ -841,7 +844,7 @@ test("HT20 — baja con cobros: COMPRA_CON_COBROS y cero escrituras", async () =
   assert.equal(o.eliminacion, undefined);
 });
 
-test("HT21 — editar monto con devuelto == 0: sincroniza compra y obligación + evento", async () => {
+test("HT21 — editar monto + detalle + nombre: las dos pantallas coherentes", async () => {
   await guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", config: OCA });
   const { compraId, rid } = await altaReintegro({
     compra: { monto: 50000, detalle: "Pasajes" },
@@ -852,17 +855,27 @@ test("HT21 — editar monto con devuelto == 0: sincroniza compra y obligación +
     uid: A,
     tarjetaId: "oca",
     compraId,
-    cambios: { monto: 60000, detalle: "Pasajes 2" },
+    cambios: {
+      monto: 60000,
+      detalle: "Pasajes 2",
+      contraparteNombre: "Bruno 2",
+      // El modal envía tipo/moneda read-only: iguales, no deben romper.
+      tipo: "reintegro",
+      moneda: "UYU",
+    },
     ahora: fecha(2026, 10, 15),
   });
 
   const r = await leerTarjetas({ db: dbAs(A), uid: A });
   assert.equal(r.tarjetas.oca.compras[0].monto, 60000);
   assert.equal(r.tarjetas.oca.compras[0].detalle, "Pasajes 2");
+  assert.equal(r.tarjetas.oca.compras[0].contraparteNombre, "Bruno 2");
 
   const o = (await getDoc(doc(dbAs(A), "reintegros", rid))).data();
   assert.equal(o.monto, 60000);
-  assert.equal(o.concepto, "Pasajes", "concepto = fotografía del alta");
+  // 6.3-bis: el concepto ya NO es fotografía; se sincroniza en la 2.ª escritura.
+  assert.equal(o.concepto, "Pasajes 2");
+  assert.equal(o.contraparteNombre, "Bruno 2");
 
   const ev = await getDocs(
     collection(dbAs(A), "reintegros", rid, "eventos"),
@@ -873,6 +886,85 @@ test("HT21 — editar monto con devuelto == 0: sincroniza compra y obligación +
   assert.ok(edicion);
   assert.equal(edicion.montoAnterior, 50000);
   assert.equal(edicion.montoNuevo, 60000);
+});
+
+test("HT21b — con cobros: detalle y nombre editables", async () => {
+  await guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", config: OCA });
+  const { compraId, rid } = await altaReintegro({
+    compra: { monto: 56000, detalle: "Pasajes" },
+  });
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), "reintegros", rid), {
+      devuelto: 1000,
+    });
+  });
+
+  await editarCompraVinculada({
+    db: dbAs(A),
+    uid: A,
+    tarjetaId: "oca",
+    compraId,
+    cambios: {
+      detalle: "Pasajes 3",
+      contraparteNombre: "Bruno 3",
+      tipo: "reintegro",
+      moneda: "UYU",
+    },
+    ahora: fecha(2026, 10, 15),
+  });
+
+  const r = await leerTarjetas({ db: dbAs(A), uid: A });
+  assert.equal(r.tarjetas.oca.compras[0].monto, 56000);
+  assert.equal(r.tarjetas.oca.compras[0].detalle, "Pasajes 3");
+  assert.equal(r.tarjetas.oca.compras[0].contraparteNombre, "Bruno 3");
+
+  const o = (await getDoc(doc(dbAs(A), "reintegros", rid))).data();
+  assert.equal(o.monto, 56000);
+  assert.equal(o.concepto, "Pasajes 3");
+  assert.equal(o.contraparteNombre, "Bruno 3");
+});
+
+test("HT21c — con cobros, la edición mixta se rechaza antes de escribir y la compra queda intacta", async () => {
+  await guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", config: OCA });
+  const { compraId, rid } = await altaReintegro({
+    compra: { monto: 56000, detalle: "Pasajes" },
+  });
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), "reintegros", rid), {
+      devuelto: 1000,
+    });
+  });
+
+  await rechaza(
+    editarCompraVinculada({
+      db: dbAs(A),
+      uid: A,
+      tarjetaId: "oca",
+      compraId,
+      cambios: {
+        monto: 60000,
+        detalle: "No entra",
+        contraparteNombre: "No entra",
+        tipo: "reintegro",
+        moneda: "UYU",
+      },
+      ahora: fecha(2026, 10, 15),
+    }),
+    "MONTO_BLOQUEADO",
+  );
+
+  const r = await leerTarjetas({ db: dbAs(A), uid: A });
+  const compra = r.tarjetas.oca.compras[0];
+  assert.equal(compra.monto, 56000);
+  assert.equal(compra.detalle, "Pasajes");
+  assert.equal(compra.contraparteNombre, "Bruno");
+
+  const o = (await getDoc(doc(dbAs(A), "reintegros", rid))).data();
+  assert.equal(o.monto, 56000);
+  assert.equal(o.concepto, "Pasajes");
+  assert.equal(o.contraparteNombre, "Bruno");
 });
 
 test("HT22 — editar monto con cobros o cerrada: bloqueado sin escritura", async () => {
@@ -977,4 +1069,89 @@ test("HT23 — reintegro USD y tipo/moneda inmutables: rechazados sin escritura"
   const r = await leerTarjetas({ db: dbAs(A), uid: A });
   assert.equal(r.tarjetas.oca.compras.length, 1);
   assert.equal(r.tarjetas.oca.compras[0].moneda, "UYU");
+});
+test("HT25 — recrear vínculo eliminado: sin cobros recrea; con cobros requiere revisión", async () => {
+  await guardarTarjeta({ db: dbAs(A), uid: A, tarjetaId: "oca", config: OCA });
+  const { compraId, rid } = await altaReintegro({
+    compra: { monto: 70000, detalle: "Pasajes" },
+  });
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), "reintegros", rid), {
+      eliminacion: {
+        eliminadaPor: A,
+        createdAt: Timestamp.now(),
+        motivo: "eliminada desde /reintegros",
+      },
+    });
+  });
+
+  const v = await leerVinculos({ db: dbAs(A), rids: [rid] });
+  assert.equal(v[rid].estado, "eliminada");
+  assert.equal(v[rid].devuelto, 0);
+  assert.equal(v[rid].contraparteNombre, "Bruno");
+
+  const rec = await recrearReintegro({
+    db: dbAs(A),
+    uid: A,
+    uidNombre: "Alice",
+    tarjetaId: "oca",
+    compraId,
+    ahora: fecha(2026, 10, 15),
+  });
+  assert.ok(rec.rid);
+  assert.notEqual(rec.rid, rid);
+
+  const r = await leerTarjetas({ db: dbAs(A), uid: A });
+  assert.equal(r.tarjetas.oca.compras[0].gastoVinculadoId, rec.rid);
+  assert.equal(r.tarjetas.oca.compras[0].contraparteNombre, "Bruno");
+
+  const nuevo = (await getDoc(doc(dbAs(A), "reintegros", rec.rid))).data();
+  assert.equal(nuevo.eliminacion, undefined);
+  assert.equal(nuevo.gastoVinculadoId, compraId);
+  assert.equal(nuevo.monto, 70000);
+  assert.equal(nuevo.contraparteNombre, "Bruno");
+  assert.equal(nuevo.movimientoInicialTipo, "tarjeta");
+
+  const viejo = (await getDoc(doc(dbAs(A), "reintegros", rid))).data();
+  assert.ok(viejo.eliminacion, "el vínculo viejo queda como histórico");
+
+  const ev = await getDocs(
+    collection(dbAs(A), "reintegros", rec.rid, "eventos"),
+  );
+  assert.equal(ev.size, 1);
+  assert.equal(ev.docs[0].data().tipo, "creacion");
+
+  // Con cobros: no se recrea; requiere revisión manual y no escribe.
+  const dos = await altaReintegro({
+    compra: { monto: 30000 },
+    compraId: "c-ht25b",
+    rid: "r-ht25b",
+  });
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), "reintegros", dos.rid), {
+      devuelto: 1000,
+      eliminacion: {
+        eliminadaPor: A,
+        createdAt: Timestamp.now(),
+        motivo: "eliminada con cobros",
+      },
+    });
+  });
+
+  await rechaza(
+    recrearReintegro({
+      db: dbAs(A),
+      uid: A,
+      uidNombre: "Alice",
+      tarjetaId: "oca",
+      compraId: dos.compraId,
+      ahora: fecha(2026, 10, 15),
+    }),
+    "REVISION_MANUAL",
+  );
+
+  const r2 = await leerTarjetas({ db: dbAs(A), uid: A });
+  const compra2 = r2.tarjetas.oca.compras.find((c) => c.id === "c-ht25b");
+  assert.equal(compra2.gastoVinculadoId, "r-ht25b");
 });

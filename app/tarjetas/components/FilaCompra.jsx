@@ -11,7 +11,7 @@ import { formatearFecha, formatearMonto, formatearUSD } from "@/app/balances/hel
 import { etiquetaCuota } from "../helpers/cuota";
 import BotonOpciones from "./BotonOpciones";
 
-export default function FilaCompra({ compra, cuota, editable, onMenu }) {
+export default function FilaCompra({ compra, cuota, editable, onMenu, vinculo, onRecrear }) {
   const precio =
     compra.moneda === "USD"
       ? formatearUSD(cuota.monto)
@@ -29,6 +29,27 @@ export default function FilaCompra({ compra, cuota, editable, onMenu }) {
         <span className="mt-[2px] inline-block rounded-[4px] border border-border bg-white/4 px-[4px] text-[9px] text-text-muted">
           {compra.tipo === "reintegro" ? "Reintegro" : "Personal"}
         </span>
+
+        {vinculo?.estado === "eliminada" && (
+          <div className="mt-[3px]">
+            <p className="text-[9px] font-semibold text-negative">
+              Reintegro eliminado en /reintegros
+            </p>
+            {Number(vinculo.devuelto || 0) === 0 ? (
+              <button
+                type="button"
+                onClick={() => onRecrear?.(compra)}
+                className="mt-[2px] cursor-pointer rounded-[6px] border border-accent2/40 bg-accent/12 px-[5px] py-[2px] text-[9px] font-semibold text-accent-light"
+              >
+                Recrear reintegro
+              </button>
+            ) : (
+              <p className="text-[9px] text-text-muted">
+                Tiene cobros: requiere revisión manual.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-2">

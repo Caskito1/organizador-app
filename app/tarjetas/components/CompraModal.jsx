@@ -19,6 +19,9 @@ function soloDigitos(valor) {
 
 export default function CompraModal({
   inicial,
+  contraparteInicial,
+  montoBloqueado = false,
+  motivoMontoBloqueado = null,
   cicloKey,
   diaCierre,
   diaVencimiento,
@@ -37,10 +40,12 @@ export default function CompraModal({
     inicial?.cuotasTotal ? String(inicial.cuotasTotal) : "1",
   );
   const [tipo, setTipo] = useState(inicial?.tipo ?? "personal");
-  const [nombreTercero, setNombreTercero] = useState("");
+  const [nombreTercero, setNombreTercero] = useState(
+    inicial?.contraparteNombre ?? contraparteInicial ?? "",
+  );
   const [error, setError] = useState(null);
 
-  const esVinculada = !!inicial?.gastoVinculadoId;
+  const esEdicion = !!inicial;
 
   // Ids estables del alta: un reintento tras un timeout reusa los MISMOS ids y
   // el servicio no duplica compra ni obligación (patrón `rid` fijo de 4.2).
@@ -152,7 +157,10 @@ export default function CompraModal({
                 value={monto}
                 onChange={(e) => setMonto(soloDigitos(e.target.value))}
                 placeholder="0"
-                className="w-full rounded-[12px] border border-border bg-white/5 px-4 py-3 font-sora text-[18px] font-bold text-text outline-none focus:border-accent2"
+                disabled={montoBloqueado}
+                className={`w-full rounded-[12px] border border-border bg-white/5 px-4 py-3 font-sora text-[18px] font-bold text-text outline-none focus:border-accent2 ${
+                  montoBloqueado ? "cursor-not-allowed opacity-60" : ""
+                }`}
               />
             </label>
 
@@ -171,6 +179,12 @@ export default function CompraModal({
             </label>
           </div>
 
+          {montoBloqueado && (
+            <p className="text-[10px] leading-[1.4] text-negative">
+              {motivoMontoBloqueado ?? "No se puede cambiar el monto."}
+            </p>
+          )}
+
           <div className="flex flex-col gap-1">
             <span className="text-[11px] uppercase tracking-[0.5px] text-text-muted">
               Moneda
@@ -180,13 +194,13 @@ export default function CompraModal({
                 <button
                   key={m}
                   type="button"
-                  disabled={esVinculada}
+                  disabled={esEdicion}
                   onClick={() => cambiarMoneda(m)}
                   className={`flex-1 rounded-[12px] border py-[10px] text-[13px] font-semibold transition-all ${
                     moneda === m
                       ? "border-accent2 bg-accent/20 text-text"
                       : "border-border bg-white/4 text-text-muted"
-                  } ${esVinculada ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                  } ${esEdicion ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                 >
                   {m === "USD" ? "US$ (USD)" : "$ (UYU)"}
                 </button>
@@ -242,9 +256,14 @@ export default function CompraModal({
                 );
               })}
             </div>
+            {esEdicion && (
+              <p className="text-[10px] leading-[1.4] text-text-muted">
+                Definido en el alta. Para cambiarlo, eliminá la compra y recreala.
+              </p>
+            )}
           </div>
 
-          {!inicial && tipo === "reintegro" && (
+          {tipo === "reintegro" && (
             <label className="flex flex-col gap-1">
               <span className="text-[11px] uppercase tracking-[0.5px] text-text-muted">
                 ¿Quién te debe?

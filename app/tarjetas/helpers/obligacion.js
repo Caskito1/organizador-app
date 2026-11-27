@@ -78,7 +78,7 @@ export function obligacionDeCompra({
 
   const nombre = requerirTexto(uidNombre, "el nombre del registrador");
   const contraparte = requerirTexto(
-    contraparteNombre,
+    contraparteNombre ?? compra.contraparteNombre,
     "el nombre de quien te debe",
   );
   const detalle =
