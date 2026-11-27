@@ -136,26 +136,27 @@ export default function TarjetasPage() {
               rangoLabel={t.rangoLabel}
             />
 
-            {t.estado === "sin_verificar" && (
+            {/* CTAs del ciclo: solo en el ciclo ACTUAL. «Cargar compra» siempre
+                (con o sin compras); «Cerrar factura» solo si hay datos cargados.
+                En ciclos pasados no se ofrece ninguna acción (solo lectura). */}
+            {t.cicloKey === t.cicloActual && t.estado === "sin_verificar" && (
               <div className="flex gap-2">
-                {/* Cargar compra: solo en el ciclo ACTUAL. En un ciclo vencido
-                    no pagado solo se permite cerrar la factura. */}
-                {t.cicloKey === t.cicloActual && (
-                  <button
-                    type="button"
-                    onClick={() => setModal({ tipo: "compra", compra: null })}
-                    className="flex-1 cursor-pointer rounded-[14px] bg-gradient-to-br from-[#9d7bff] to-[#5b35d5] px-3 py-[11px] text-[13px] font-bold text-white shadow-[0_8px_28px_rgba(138,100,255,0.38)] transition-all hover:scale-[1.01]"
-                  >
-                    Cargar compra
-                  </button>
-                )}
                 <button
                   type="button"
-                  onClick={() => setModal({ tipo: "cerrar" })}
-                  className="flex-1 cursor-pointer rounded-[14px] border border-accent/50 bg-accent/15 px-3 py-[11px] text-[13px] font-semibold text-accent-light transition-all hover:bg-accent/25"
+                  onClick={() => setModal({ tipo: "compra", compra: null })}
+                  className="flex-1 cursor-pointer rounded-[14px] bg-gradient-to-br from-[#9d7bff] to-[#5b35d5] px-3 py-[11px] text-[13px] font-bold text-white shadow-[0_8px_28px_rgba(138,100,255,0.38)] transition-all hover:scale-[1.01]"
                 >
-                  Cerrar factura
+                  Cargar compra
                 </button>
+                {t.comprasCiclo.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setModal({ tipo: "cerrar" })}
+                    className="flex-1 cursor-pointer rounded-[14px] border border-accent/50 bg-accent/15 px-3 py-[11px] text-[13px] font-semibold text-accent-light transition-all hover:bg-accent/25"
+                  >
+                    Cerrar factura
+                  </button>
+                )}
               </div>
             )}
 

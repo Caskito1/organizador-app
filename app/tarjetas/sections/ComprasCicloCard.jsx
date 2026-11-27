@@ -84,8 +84,9 @@ export default function ComprasCicloCard({
           </div>
 
           <div className="mt-3 border-t border-border pt-2">
-            <FilaResumen etiqueta="Personales" valor={resumen.personales} />
-            <FilaResumen etiqueta="Reintegros" valor={resumen.reintegros} />
+            {/* El pie expone solo Total y Deuda total. `personales` y
+                `reintegros` siguen existiendo en `resumenCiclo` (invariante
+                personales + reintegros = total) pero no se muestran acá. */}
             <FilaResumen etiqueta="Total" valor={resumen.total} total />
             <FilaResumen
               etiqueta="Deuda total"
