@@ -77,7 +77,10 @@ export function tipoDineroDe(r) {
 // Retrocompat: ausente o valor desconocido → dinero (decisión 4.3c: los
 // docs viejos sin el campo se interpretan como dinero para el espejo).
 function esDineroInicial(r) {
-  return r.movimientoInicialTipo !== "item";
+  return (
+    r.movimientoInicialTipo !== "item" &&
+    r.movimientoInicialTipo !== "tarjeta"
+  );
 }
 
 // ── Regla de dominio del espejo (30/10/2026) — NO SIMETRIZAR ──────────────
@@ -193,6 +196,7 @@ export function salidasDelMes({
       (r) =>
         esContraparteMiembro(r, uid) &&
         r.sentido === "por_devolver" &&
+        r.movimientoInicialTipo !== "tarjeta" &&
         enRangoMes(fechaEfectivaDe(r), start, nextStart),
     )
     .reduce((a, r) => a + Number(r.monto || 0), 0);

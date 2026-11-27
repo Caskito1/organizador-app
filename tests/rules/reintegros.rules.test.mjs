@@ -1166,3 +1166,80 @@ test('3.52 — 5.0-fecha: bitácora acepta edicion/fecha y sigue rechazando enti
     })
   );
 });
+
+// ── 6.3 — vínculo con compra: gastoVinculadoId null | string ─────────────
+
+test('3.53 - 6.3: create con gastoVinculadoId string se acepta; null sigue aceptándose', async () => {
+  const db = dbAs(A);
+  await assertSucceeds(
+    setDoc(
+      doc(db, 'reintegros', 'r353a'),
+      externalObl({ gastoVinculadoId: 'compra-123' })
+    )
+  );
+  await assertSucceeds(
+    setDoc(doc(db, 'reintegros', 'r353b'), externalObl({ gastoVinculadoId: null }))
+  );
+});
+
+test('3.54 - 6.3: gastoVinculadoId número, objeto o booleano se rechaza', async () => {
+  const db = dbAs(A);
+  for (const [rid, valor] of [
+    ['r354a', 42],
+    ['r354b', { id: 'compra' }],
+    ['r354c', true],
+  ]) {
+    await assertFails(
+      setDoc(doc(db, 'reintegros', rid), externalObl({ gastoVinculadoId: valor }))
+    );
+  }
+});
+
+test('3.55 - 6.3: string con otro campo inválido sigue rechazado (sin relajar el create)', async () => {
+  const db = dbAs(A);
+  await assertFails(
+    setDoc(
+      doc(db, 'reintegros', 'r355a'),
+      externalObl({ gastoVinculadoId: 'compra-x', monto: 0.5 })
+    )
+  );
+  await assertFails(
+    setDoc(
+      doc(db, 'reintegros', 'r355b'),
+      externalObl({ gastoVinculadoId: 'compra-x', movimientoInicial: 'otro' })
+    )
+  );
+  await assertFails(
+    setDoc(
+      doc(db, 'reintegros', 'r355c'),
+      externalObl({ gastoVinculadoId: 'compra-x', concepto: '' })
+    )
+  );
+  await assertFails(
+    setDoc(
+      doc(db, 'reintegros', 'r355d'),
+      externalObl({ gastoVinculadoId: 'compra-x', createdAt: Timestamp.now() })
+    )
+  );
+});
+
+test('3.56 - 6.3: update que intenta cambiar gastoVinculadoId se rechaza (sin rama nueva)', async () => {
+  await seed('r356', externalObl({ gastoVinculadoId: 'compra-123' }));
+  const db = dbAs(A);
+  await assertFails(
+    updateDoc(doc(db, 'reintegros', 'r356'), { gastoVinculadoId: 'compra-999' })
+  );
+  await assertFails(
+    updateDoc(doc(db, 'reintegros', 'r356'), { gastoVinculadoId: null })
+  );
+});
+
+test('3.57 - 6.3: obligación de miembro (participantes 2) acepta gastoVinculadoId string', async () => {
+  const db = dbAs(A);
+  await assertSucceeds(
+    setDoc(
+      doc(db, 'reintegros', 'r357'),
+      createMemberObl({ gastoVinculadoId: 'compra-miembro' })
+    )
+  );
+});

@@ -40,7 +40,7 @@ export default function TarjetasPage() {
   function abrirMenuCompra(compra) {
     setMenu({
       titulo: compra.detalle || "Compra",
-      subtitulo: `${compra.moneda} · ${compra.cuotasTotal} cuota(s)`,
+      subtitulo: `${compra.tipo === "reintegro" ? "Reintegro" : "Personal"} · ${compra.moneda} · ${compra.cuotasTotal} cuota(s)`,
       items: [
         {
           id: "editar",
@@ -63,11 +63,11 @@ export default function TarjetasPage() {
     });
   }
 
-  async function guardarCompra(compra) {
+  async function guardarCompra(compra, ids) {
     if (modal?.compra) {
       await t.acciones.actualizarCompra(modal.compra.id, compra);
     } else {
-      await t.acciones.crearCompra(compra);
+      await t.acciones.crearCompra(compra, ids);
     }
   }
 

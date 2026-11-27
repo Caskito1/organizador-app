@@ -90,6 +90,17 @@ function ChipTipoDinero({ r }) {
   );
 }
 
+// 6.3 — chip «Tarjeta»: obligación nacida de una compra con tarjeta.
+// Derivado del documento (sin campo ni suscripción nuevos).
+function ChipTarjeta({ r }) {
+  if (r.movimientoInicialTipo !== "tarjeta") return null;
+  return (
+    <span className="mt-[4px] inline-block rounded-[8px] border border-accent2/40 bg-accent/12 px-2 py-[2px] text-[10px] font-medium text-accent-light">
+      Tarjeta
+    </span>
+  );
+}
+
 // 4.3-bis — disparador del menú ⋮ («Acciones», área táctil 40×40 px).
 function BotonMenu({ etiqueta, abierto, onAbrir }) {
   return (
@@ -236,6 +247,7 @@ export default function FilaReintegro({
           <ChipEdicion ev={evObl} />
           <ChipFechaEdicion ev={evFecha} />
           <ChipTipoDinero r={r} />
+          <ChipTarjeta r={r} />
         </div>
 
         <div className="flex-shrink-0">

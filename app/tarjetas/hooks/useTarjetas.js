@@ -27,6 +27,11 @@ import {
   guardarTarjeta,
   leerTarjetas,
 } from "../services/tarjetas";
+import {
+  crearCompraConReintegro,
+  editarCompraVinculada,
+  eliminarCompraVinculada,
+} from "../services/reintegroDeCompra";
 
 const TARJETA_ID = "oca";
 const DEFAULT_CIERRE = 18;
@@ -70,6 +75,8 @@ function conTimeout(promesa) {
 export default function useTarjetas() {
   const { user } = useAuth();
   const uid = user?.uid ?? null;
+  const uidNombre =
+    user?.displayName || user?.email?.split("@")[0] || "Usuario";
 
   const [estado, setEstado] = useState(ESTADO_INICIAL);
   const [cicloKey, setCicloKey] = useState(null);
@@ -212,20 +219,48 @@ export default function useTarjetas() {
     await cargar({ silencioso: true });
   }
 
-  async function crearCompra(compra) {
+  async function crearCompra(compra, ids) {
     if (pendiente) throw errorBloqueo();
 
-    await ejecutar(() =>
-      agregarCompra({ db, uid, tarjetaId: TARJETA_ID, compra }),
-    );
+    if (compra?.tipo === "reintegro") {
+      await ejecutar(() =>
+        crearCompraConReintegro({
+          db,
+          uid,
+          uidNombre,
+          tarjetaId: TARJETA_ID,
+          compra,
+          contraparteNombre: compra.contraparteNombre,
+          compraId: ids?.compraId,
+          rid: ids?.rid,
+        }),
+      );
+    } else {
+      await ejecutar(() =>
+        agregarCompra({ db, uid, tarjetaId: TARJETA_ID, compra }),
+      );
+    }
     await cargar({ silencioso: true });
   }
 
   async function actualizarCompra(compraId, cambios) {
     if (bloqueado) throw errorBloqueo();
 
+    const actual = (tarjeta?.compras ?? []).find(
+      (item) => item.id === compraId,
+    );
+    const vinculada = !!actual?.gastoVinculadoId;
+
     await ejecutar(() =>
-      editarCompra({ db, uid, tarjetaId: TARJETA_ID, compraId, cambios }),
+      vinculada
+        ? editarCompraVinculada({
+            db,
+            uid,
+            tarjetaId: TARJETA_ID,
+            compraId,
+            cambios,
+          })
+        : editarCompra({ db, uid, tarjetaId: TARJETA_ID, compraId, cambios }),
     );
     await cargar({ silencioso: true });
   }
@@ -233,8 +268,20 @@ export default function useTarjetas() {
   async function borrarCompra(compraId) {
     if (bloqueado) throw errorBloqueo();
 
+    const actual = (tarjeta?.compras ?? []).find(
+      (item) => item.id === compraId,
+    );
+    const vinculada = !!actual?.gastoVinculadoId;
+
     await ejecutar(() =>
-      eliminarCompra({ db, uid, tarjetaId: TARJETA_ID, compraId }),
+      vinculada
+        ? eliminarCompraVinculada({
+            db,
+            uid,
+            tarjetaId: TARJETA_ID,
+            compraId,
+          })
+        : eliminarCompra({ db, uid, tarjetaId: TARJETA_ID, compraId }),
     );
     await cargar({ silencioso: true });
   }

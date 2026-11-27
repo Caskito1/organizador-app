@@ -3371,3 +3371,65 @@ test("H55 — editar la fecha re-emite la suscripción: la UI ve la fecha nueva"
   await sleep(100);
   assert.equal(collector.error, null, "sin errores de suscripción");
 });
+
+// ═══ 6.3 — H-2: obligación de tarjeta sin movimiento de caja ═══
+
+test("H56 — miembro + tarjeta: 0 entrada y 0 salida en ambas partes; la deuda se ve", () => {
+  const start = new Date(2026, 9, 1);
+  const nextStart = new Date(2026, 10, 1);
+  const o = {
+    id: "h56",
+    registradoPor: A,
+    registradoPorNombre: "Alice",
+    contraparteUid: B,
+    contraparteNombre: "Bob",
+    participantes: [A, B],
+    sentido: "por_cobrar",
+    monto: 50000,
+    devuelto: 0,
+    movimientoInicial: "ninguno",
+    movimientoInicialTipo: "tarjeta",
+    concepto: "Pasajes",
+    fecha: new Date(2026, 9, 10),
+    createdAt: new Date(2026, 9, 10),
+  };
+  const args = (uid) => ({ obligaciones: [o], entregas: [], uid, start, nextStart });
+
+  assert.equal(entradasDelMes(args(A)), 0);
+  assert.equal(salidasDelMes(args(A)), 0);
+  assert.equal(entradasDelMes(args(B)), 0);
+  assert.equal(salidasDelMes(args(B)), 0);
+  assert.equal(saldoDe(o), 50000);
+});
+
+test("H57 — externa + tarjeta: sin espejo; registrador 0 caja; regresión dinero", () => {
+  const start = new Date(2026, 9, 1);
+  const nextStart = new Date(2026, 10, 1);
+  const externa = {
+    id: "h57",
+    registradoPor: A,
+    registradoPorNombre: "Alice",
+    contraparteUid: null,
+    contraparteNombre: "Tercero",
+    participantes: [A],
+    sentido: "por_cobrar",
+    monto: 30000,
+    devuelto: 0,
+    movimientoInicial: "ninguno",
+    movimientoInicialTipo: "tarjeta",
+    concepto: "Compra",
+    fecha: new Date(2026, 9, 10),
+    createdAt: new Date(2026, 9, 10),
+  };
+  const args = (uid) => ({ obligaciones: [externa], entregas: [], uid, start, nextStart });
+
+  assert.equal(entradasDelMes(args(A)), 0);
+  assert.equal(salidasDelMes(args(A)), 0);
+  assert.equal(entradasDelMes(args(C)), 0);
+  assert.equal(salidasDelMes(args(C)), 0);
+
+  // Regresión: el espejo de dinero de un miembro sigue contando.
+  const dinero = { ...externa, id: "h57d", contraparteUid: B, contraparteNombre: "Bob", participantes: [A, B], movimientoInicial: "salida", movimientoInicialTipo: "dinero", monto: 1000 };
+  assert.equal(entradasDelMes({ obligaciones: [dinero], entregas: [], uid: B, start, nextStart }), 1000);
+  assert.equal(salidasDelMes({ obligaciones: [dinero], entregas: [], uid: B, start, nextStart }), 0);
+});

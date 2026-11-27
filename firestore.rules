@@ -328,7 +328,8 @@ match /fixed_expense_entries/{entryId} {
         && request.resource.data.movimientoInicial in ['ninguno', 'salida', 'entrada']
         && request.resource.data.concepto is string
         && request.resource.data.concepto.size() > 0
-        && request.resource.data.gastoVinculadoId == null   // reservado en v1
+        && ( request.resource.data.gastoVinculadoId == null
+             || request.resource.data.gastoVinculadoId is string )   // vínculo con compra (6.3)
         // Sin constancias al nacer (nadie 'ya condonó/ya eliminó' un doc nuevo):
         && !('condonacion' in request.resource.data)
         && !('eliminacion' in request.resource.data)

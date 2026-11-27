@@ -1,6 +1,7 @@
 // tarjetas/components/CompraModal.jsx
-// Alta/edición de una compra (6.2, §12.6). El tipo «Reintegro» queda
-// deshabilitado hasta 6.3 (A-2).
+// Alta/edición de una compra (6.2 §12.6 + 6.3 §13.3.8). El tipo «Reintegro»
+// crea una obligación por el total en /reintegros (contraparte externa, nombre
+// obligatorio en el alta). En una compra vinculada, tipo y moneda son fijos.
 
 "use client";
 
@@ -10,6 +11,7 @@ import { MODAL_SHEET_CLASSES } from "@/app/components/ui/modalSheet";
 import { fechaLocal, hoyISO, isoDeFecha } from "@/app/gastos/helpers/dateHelpers";
 
 import { fechaEnCiclo } from "../helpers/ciclo";
+import { nuevoId } from "../helpers/persistencia";
 
 function soloDigitos(valor) {
   return valor.replace(/[^\d]/g, "");
@@ -34,7 +36,20 @@ export default function CompraModal({
   const [cuotas, setCuotas] = useState(
     inicial?.cuotasTotal ? String(inicial.cuotasTotal) : "1",
   );
+  const [tipo, setTipo] = useState(inicial?.tipo ?? "personal");
+  const [nombreTercero, setNombreTercero] = useState("");
   const [error, setError] = useState(null);
+
+  const esVinculada = !!inicial?.gastoVinculadoId;
+
+  // Ids estables del alta: un reintento tras un timeout reusa los MISMOS ids y
+  // el servicio no duplica compra ni obligación (patrón `rid` fijo de 4.2).
+  const [ids] = useState(() => ({ compraId: nuevoId(), rid: nuevoId() }));
+
+  function cambiarMoneda(m) {
+    setMoneda(m);
+    if (m === "USD" && tipo === "reintegro") setTipo("personal");
+  }
 
   async function guardar() {
     setError(null);
@@ -49,6 +64,12 @@ export default function CompraModal({
     if (!Number.isInteger(cuotasNum) || cuotasNum < 1) {
       return setError("Las cuotas deben ser un entero mayor o igual a 1.");
     }
+    if (tipo === "reintegro" && moneda !== "UYU") {
+      return setError("El reintegro de una compra en dólares no está disponible en v1.");
+    }
+    if (tipo === "reintegro" && !nombreTercero.trim()) {
+      return setError("Indicá quién te debe para crear el reintegro.");
+    }
 
     const fecha = fechaLocal(fechaISO);
     if (!fechaEnCiclo(fecha, cicloKey, diaCierre, diaVencimiento)) {
@@ -58,14 +79,20 @@ export default function CompraModal({
     }
 
     try {
-      await onGuardar({
-        fecha,
-        detalle: detalle.trim(),
-        monto: montoNum,
-        moneda,
-        cuotasTotal: cuotasNum,
-        tipo: "personal",
-      });
+      await onGuardar(
+        {
+          fecha,
+          detalle: detalle.trim(),
+          monto: montoNum,
+          moneda,
+          cuotasTotal: cuotasNum,
+          tipo,
+          ...(tipo === "reintegro"
+            ? { contraparteNombre: nombreTercero.trim() }
+            : {}),
+        },
+        ids,
+      );
       onClose();
     } catch (e) {
       setError(e?.message ?? "No se pudo guardar la compra.");
@@ -82,8 +109,9 @@ export default function CompraModal({
           {inicial ? "Editar compra" : "Cargar compra"}
         </h2>
         <p className="mb-4 text-[12px] text-text-muted">
-          La compra no afecta el resultado: vive en el detalle de la tarjeta. Las
-          cuotas se pagan con el resumen de cada ciclo.
+          {tipo === "reintegro"
+            ? "El reintegro no afecta el resultado: crea una deuda por el total que se cobra desde /reintegros."
+            : "La compra no afecta el resultado: vive en el detalle de la tarjeta. Las cuotas se pagan con el resumen de cada ciclo."}
         </p>
 
         <div className="flex flex-col gap-3">
@@ -152,12 +180,13 @@ export default function CompraModal({
                 <button
                   key={m}
                   type="button"
-                  onClick={() => setMoneda(m)}
-                  className={`flex-1 cursor-pointer rounded-[12px] border py-[10px] text-[13px] font-semibold transition-all ${
+                  disabled={esVinculada}
+                  onClick={() => cambiarMoneda(m)}
+                  className={`flex-1 rounded-[12px] border py-[10px] text-[13px] font-semibold transition-all ${
                     moneda === m
                       ? "border-accent2 bg-accent/20 text-text"
                       : "border-border bg-white/4 text-text-muted"
-                  }`}
+                  } ${esVinculada ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                 >
                   {m === "USD" ? "US$ (USD)" : "$ (UYU)"}
                 </button>
@@ -170,17 +199,66 @@ export default function CompraModal({
               Tipo
             </span>
             <div className="flex gap-2">
-              <span className="flex-1 rounded-[12px] border border-accent2 bg-accent/20 py-[10px] text-center text-[13px] font-semibold text-text">
-                Personal
-              </span>
-              <span
-                title="Disponible en 6.3"
-                className="flex-1 rounded-[12px] border border-border bg-white/3 py-[10px] text-center text-[13px] font-semibold text-text-muted/50"
-              >
-                Reintegro
-              </span>
+              {["personal", "reintegro"].map((t) => {
+                const activo = tipo === t;
+                const bloqueadoPorMoneda = t === "reintegro" && moneda === "USD";
+                const fijo = !!inicial;
+
+                if (fijo || bloqueadoPorMoneda) {
+                  return (
+                    <span
+                      key={t}
+                      title={
+                        bloqueadoPorMoneda
+                          ? "Solo en pesos (v1)"
+                          : t === "reintegro"
+                            ? "Crea una obligación por el total"
+                            : undefined
+                      }
+                      className={`flex-1 rounded-[12px] border py-[10px] text-center text-[13px] font-semibold ${
+                        activo
+                          ? "border-accent2 bg-accent/20 text-text"
+                          : "border-border bg-white/3 text-text-muted/50"
+                      }`}
+                    >
+                      {t === "reintegro" ? "Reintegro" : "Personal"}
+                    </span>
+                  );
+                }
+
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTipo(t)}
+                    className={`flex-1 cursor-pointer rounded-[12px] border py-[10px] text-[13px] font-semibold transition-all ${
+                      activo
+                        ? "border-accent2 bg-accent/20 text-text"
+                        : "border-border bg-white/4 text-text-muted"
+                    }`}
+                  >
+                    {t === "reintegro" ? "Reintegro" : "Personal"}
+                  </button>
+                );
+              })}
             </div>
           </div>
+
+          {!inicial && tipo === "reintegro" && (
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-[0.5px] text-text-muted">
+                ¿Quién te debe?
+              </span>
+              <input
+                type="text"
+                value={nombreTercero}
+                onChange={(e) => setNombreTercero(e.target.value)}
+                placeholder="Nombre del tercero"
+                maxLength={80}
+                className="w-full rounded-[12px] border border-border bg-white/5 px-4 py-3 text-[14px] text-text outline-none focus:border-accent2"
+              />
+            </label>
+          )}
         </div>
 
         {error && (
